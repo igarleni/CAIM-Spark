@@ -8,5 +8,4 @@ results/*
 .project
 
 #config
-pom.xml
 .settings/*
