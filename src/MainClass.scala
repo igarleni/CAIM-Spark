@@ -1,7 +1,6 @@
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd._
-import org.apache.spark.SparkConf
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
 
@@ -10,7 +9,7 @@ object MainClass {
   private var FILE_CP_OUTPUT:String = null
   private var FILE_DATA_OUTPUT:String = null
   private var MEASURE_COLS:Int = 0
-  private var FIELD_DELIMITER:String = null
+  private var FIELD_DELIMITER:String = ";"
   
   def main(args:Array[String]): Unit = 
   {
@@ -22,10 +21,11 @@ object MainClass {
     val sc = new SparkContext(conf)
     
     println("----------------App init----------------")
-    
+    readInputString(args)
     //leer datos y transformarlos
     val file = sc.textFile(FILE_INPUT)
-    val data:RDD[LabeledPoint] = file.map(line => line.split(FIELD_DELIMITER)).map(line => new LabeledPoint(line(line.length -1).toDouble, Vectors.dense(line.slice(0,(line.length -1)) ) ) )
+    val intermediate = file.map(line => line.split(FIELD_DELIMITER))
+    val data:RDD[LabeledPoint] = file.map(line => line.split(FIELD_DELIMITER)).map(line => new LabeledPoint(line(line.length -1).toDouble, Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
     
     //Aplicar CAIM
     CAIM.discretizeData(data,sc)

@@ -31,14 +31,16 @@ object CAIM {
             c(bLabels2Int.value(label)) = 1L
             for (i <- sv.indices.indices) yield ((sv.indices(i), sv.values(i).toFloat), c)
         })
-     val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues)
-     println(sortedValues.first()._1 + ", " + sortedValues.first()._2)
+     val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues)     
+     
+     
   }
   
+  //genera (Dimension, Valor), [countlabelClase1, countlabelClase2, ... ]
   def getSortedDistinctValues(
-        bclassDistrib: Broadcast[Map[Int, Long]],
-        featureValues: RDD[((Int, Float), Array[Long])]): RDD[((Int, Float), Array[Long])] = {
-
+      bclassDistrib: Broadcast[Map[Int, Long]],
+      featureValues: RDD[((Int, Float), Array[Long])]): RDD[((Int, Float), Array[Long])] = {
+    
     val nonZeros: RDD[((Int, Float), Array[Long])] =
       featureValues.map(y => (y._1._1 + "," + y._1._2, y._2)).reduceByKey { case (v1, v2) =>
       (v1, v2).zipped.map(_ + _)
@@ -57,8 +59,8 @@ object CAIM {
     result
   }
   
-    def addZerosIfNeeded(nonZeros: RDD[((Int, Float), Array[Long])],
-                       bclassDistrib: Broadcast[Map[Int, Long]]): RDD[((Int, Float), Array[Long])] = {
+  def addZerosIfNeeded(nonZeros: RDD[((Int, Float), Array[Long])],
+      bclassDistrib: Broadcast[Map[Int, Long]]): RDD[((Int, Float), Array[Long])] = {
     nonZeros
       .map { case ((k, p), v) => (k, v) }
       .reduceByKey { case (v1, v2) => (v1, v2).zipped.map(_ + _) }
@@ -67,4 +69,6 @@ object CAIM {
         ((k, 0.0F), v2.toArray)
       }.filter { case (_, v) => v.sum > 0 }
   }
+  
+  
 }
