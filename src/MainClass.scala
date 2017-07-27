@@ -27,8 +27,12 @@ object MainClass {
     val intermediate = file.map(line => line.split(FIELD_DELIMITER))
     val data:RDD[LabeledPoint] = file.map(line => line.split(FIELD_DELIMITER)).map(line => new LabeledPoint(line(line.length -1).toDouble, Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
     
-    //Aplicar CAIM
-    CAIM.discretizeData(data,sc)
+    //Aplicar CAIM y obtener los bins
+    //val bins:RDD[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
+    CAIM.discretizeData(data,sc, MEASURE_COLS)
+    
+    //transformar los datos
+    
     //guardar datos nuevos
   }
   

@@ -5,9 +5,14 @@ import org.apache.spark.mllib.linalg.DenseVector
 import org.apache.spark.mllib.linalg.SparseVector
 import org.apache.spark.broadcast.Broadcast
 import scala.collection.Map
+import scala.collection.mutable.ArrayBuffer
 
 object CAIM {
-  def discretizeData(data: RDD[LabeledPoint], sc:SparkContext)
+  var tmpCaimNumerator = 0.0 //para la acumulacion de estadisticas
+  var finalBins = ArrayBuffer[((Float, Float), Float)] ()
+  
+  //def discretizeData(data: RDD[LabeledPoint], sc:SparkContext, cols:Int): RDD[(Int,(Float,Float))] =
+  def discretizeData(data: RDD[LabeledPoint], sc:SparkContext, cols:Int)
   {
     //obtenemos los labels de la variable clase
     val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
@@ -34,6 +39,60 @@ object CAIM {
      val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues)     
      
      
+     //mientras queden cutPoints candidatos..
+     for (dimension <- 0 until cols)
+     {
+       val dataDim = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value,(hlabels, 0.floatValue()))}) 
+       caimDiscretization(dataDim)
+     }
+     
+  }
+  
+  def caimDiscretization(remainingCPs: RDD[(Float, (Array[Long], Float))])
+  {
+   /* INICIALIZACION DEL BUCLE
+    * 
+    * cutPoints = {maxValue} --> puntos de corte seleccionados
+    * numCPs = 1 --> numero de cutPoints
+    * remainingCPs --> posibles cutPoints, en cola para analizar
+    * numRemainingCPs = length(remainingCPs) --> ...
+    * GlobalBins = {minValue-maxValue} --> bins/particiones actuales
+    * 
+    * */
+    //CAIM vencedor actual (inicializado a rango completo) y cutPoints escogidos
+    val selectedCutPoints = ArrayBuffer[Float]()
+    selectedCutPoints += remainingCPs.first._1
+    selectedCutPoints += remainingCPs.collect().last._1
+    var classHistogram = remainingCPs.values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray,x._2))
+    var fullRangeBin = ( (selectedCutPoints(0) , selectedCutPoints(1)) ,classHistogram._1.max.toFloat)
+    finalBins += fullRangeBin
+    var GlobalCAIM = fullRangeBin._2
+    
+    /*variables temporales de cada iteracion*/
+    var numRemainingCPs = remainingCPs.count()
+    numRemainingCPs -= 2 //minimo y maximo extraidos antes
+    var exit = false
+    while(numRemainingCPs > 0 && !exit)
+    {
+      //Iterar sobre todos los cutPoints candidatos, obteniendo bins y caim
+      remainingCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long]))] => for (i <- iter) yield i }, true)
+      
+      //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato)
+      //actualizar bins y caims de bins
+      numRemainingCPs - 1
+    }
+  }
+  
+  def computeCAIM(candidatePoint:(Float, Array[Long]))
+  {
+    
+    var tmpCaim = tmpCaimNumerator
+    //calcular CAIM fijandose en  finalBins para reutilizar CAIM bins y no tener que recalcularlo
+    
+    //USAR FOLD(tmpCaim) ?????????
+    
+    tmpCaimNumerator = tmpCaim
+    tmpCaim = tmpCaim / (finalBins.length + 1)
   }
   
   //genera (Dimension, Valor), [countlabelClase1, countlabelClase2, ... ]
@@ -69,6 +128,5 @@ object CAIM {
         ((k, 0.0F), v2.toArray)
       }.filter { case (_, v) => v.sum > 0 }
   }
-  
   
 }
