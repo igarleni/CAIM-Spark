@@ -8,12 +8,14 @@ import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 
 object CAIM {
-  //Bins variables = ( (CutPointInit, CutPointEnd)  ,  ClassHistogram )
-  var finalBins = ArrayBuffer[((Float, Float), Array[Long])] ()
+  var numLabels = 0
+  //Bins variables = ( (CutPointInit, CutPointEnd)  , (ClassHistogram, CAIM) )
+  var finalBins = ArrayBuffer[((Float, Float), (Array[Long], Double))] ()
   var nFinalBins = 1
   var finalCuPoints = 2
-  //temporal Bins = ( CAIM , Class histogram )
-  var tempBins = ArrayBuffer[(Float, Array[Long])] ()
+  var GlobalCaim = -Double.MaxValue
+  //temporal Bins = ( Class histogram, CAIM )
+  var tempBins = ArrayBuffer[(Array[Long], Double)] ()
   var nTempBins = 2
   var actualTempBin = -1
 
@@ -23,7 +25,7 @@ object CAIM {
   {
     //obtenemos los labels de la variable clase
     val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
-    val nLabels = labels2Int.size
+    numLabels = labels2Int.size
     //metemos en cache la variable
     val bLabels2Int = sc.broadcast(labels2Int)
     
@@ -35,11 +37,11 @@ object CAIM {
     val featureValues =
         data.flatMap({
           case LabeledPoint(label, dv: DenseVector) =>
-            val c = Array.fill[Long](nLabels)(0L)
+            val c = Array.fill[Long](numLabels)(0L)
             c(bLabels2Int.value(label)) = 1L
             for (i <- dv.values.indices) yield ((i, dv(i).toFloat), c)
           case LabeledPoint(label, sv: SparseVector) =>
-            val c = Array.fill[Long](nLabels)(0L)
+            val c = Array.fill[Long](numLabels)(0L)
             c(bLabels2Int.value(label)) = 1L
             for (i <- sv.indices.indices) yield ((sv.indices(i), sv.values(i).toFloat), c)
         })
@@ -49,13 +51,13 @@ object CAIM {
      //mientras queden cutPoints candidatos..
      for (dimension <- 0 until cols)
      {
-       val dataDim = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value,(hlabels, 0.floatValue()))}) 
+       val dataDim = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value,(hlabels, 0.0))}) 
        caimDiscretization(dataDim)
      }
      
   }
   
-  def caimDiscretization(remainingCPs: RDD[(Float, (Array[Long], Float))])
+  def caimDiscretization(remainingCPs: RDD[(Float, (Array[Long], Double))])
   {
    /* INICIALIZACION DEL BUCLE
     * 
@@ -71,9 +73,8 @@ object CAIM {
     selectedCutPoints += remainingCPs.first._1 //minimo
     selectedCutPoints += remainingCPs.keys.max //maximo
     var classHistogram = remainingCPs.values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray,x._2))
-    var fullRangeBin = ( (selectedCutPoints(0) , selectedCutPoints(1)) ,classHistogram._1)
+    var fullRangeBin = ( (selectedCutPoints(0) , selectedCutPoints(1)) ,(classHistogram._1, GlobalCaim))
     finalBins += fullRangeBin
-    var GlobalCAIM = fullRangeBin._2
     
     /*variables temporales de cada iteracion*/
     var numRemainingCPs = remainingCPs.count()
@@ -82,48 +83,50 @@ object CAIM {
     while(numRemainingCPs > 0 && !exit)
     {
       //Iterar sobre todos los cutPoints candidatos, obteniendo bins y caim
+      //Set actualTempBins to -1, it will be set to 0 after
       actualTempBin = -1
-      //TODO initialize tempBins
-      remainingCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Float))] => for (i <- iter) yield computeCAIM(i) }, true)
+      //initialize tempBins
+      tempBins.clear()
+      for (i <- finalBins) tempBins += i._2
+      //generate new CAIM database
+      val newCAIM = remainingCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double))] => for (i <- iter) yield computeCAIM(i) }, true)
       
-      //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato)
+      //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato, haciendo su CAIM = -1)
       
       //actualizar bins y caims de bins
       numRemainingCPs - 1
     }
   }
   
-  def computeCAIM(candidatePoint:(Float, (Array[Long],Float))): (Float, (Array[Long],Float)) =
+  def computeCAIM(candidatePoint:(Float, (Array[Long],Double))): (Float, (Array[Long],Double)) =
   {
     if (candidatePoint._2._2 < 0) //Caso cutPoint ya definitivo
     {
+      //if (tempBins(actualTempBin) != finalBins(actualTempBin) println("error de calculo en tempBins o en finalBins")
       actualTempBin += 1
-      //TODO crear nuevo Bin vacio en el tempBin entre este punto y palante
-      //TODO crear zeroHistogram = (0,0,0,..) tamano nLabels de clase
-      val zeroHistogram = new Array[Long](5)
-      for (i <- 0 until zeroHistogram.length) zeroHistogram(i) = 0
-      tempBins.insert(actualTempBin, (0.toFloat, zeroHistogram))
+      val newCaimBin:Double = candidatePoint._2._1.max ^ 2
+      tempBins(actualTempBin) = (candidatePoint._2._1,newCaimBin)
       candidatePoint
     }
     else
     {
       //Nuevo CAIM del Bin de la izquierda 
-      var binHistogram = tempBins(actualTempBin)._2
+      var binHistogram = tempBins(actualTempBin)._1
       var newPointHistogram = candidatePoint._2._1
       var newBinHistogram = for(i <- 0 until binHistogram.length) yield binHistogram(i) + newPointHistogram(i)
       var newCaimBin = ( (newBinHistogram).max ^ 2 ) / newBinHistogram.sum.toFloat
-      tempBins(actualTempBin) = (newCaimBin , newBinHistogram.toArray) //izquierda
+      tempBins(actualTempBin) = (newBinHistogram.toArray, newCaimBin) //izquierda
       
       //Nuevo CAIM del Bin de la derecha
-      binHistogram = tempBins(actualTempBin + 1)._2
+      binHistogram = tempBins(actualTempBin + 1)._1
       newPointHistogram = candidatePoint._2._1
       newBinHistogram = for(i <- 0 until binHistogram.length) yield binHistogram(i) - newPointHistogram(i)
       newCaimBin = ( (newBinHistogram).max ^ 2 ) / newBinHistogram.sum.toFloat
-      tempBins(actualTempBin + 1) = (newCaimBin , newBinHistogram.toArray) //derecha
+      tempBins(actualTempBin + 1) = (newBinHistogram.toArray, newCaimBin) //derecha
       
     }
     //new CAIM point
-    var newCaimPoint = (for (i <- tempBins) yield i._1).sum
+    var newCaimPoint = (for (i <- tempBins) yield i._2).sum
     (candidatePoint._1, (candidatePoint._2._1,newCaimPoint))
   }
   
