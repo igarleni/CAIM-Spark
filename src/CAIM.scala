@@ -8,9 +8,16 @@ import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 
 object CAIM {
-  var tmpCaimNumerator = 0.0 //para la acumulacion de estadisticas
-  var finalBins = ArrayBuffer[((Float, Float), Float)] ()
-  
+  //Bins variables = ( (CutPointInit, CutPointEnd)  ,  ClassHistogram )
+  var finalBins = ArrayBuffer[((Float, Float), Array[Long])] ()
+  var nFinalBins = 1
+  var finalCuPoints = 2
+  //temporal Bins = ( CAIM , Class histogram )
+  var tempBins = ArrayBuffer[(Float, Array[Long])] ()
+  var nTempBins = 2
+  var actualTempBin = -1
+
+    
   //def discretizeData(data: RDD[LabeledPoint], sc:SparkContext, cols:Int): RDD[(Int,(Float,Float))] =
   def discretizeData(data: RDD[LabeledPoint], sc:SparkContext, cols:Int)
   {
@@ -61,10 +68,10 @@ object CAIM {
     * */
     //CAIM vencedor actual (inicializado a rango completo) y cutPoints escogidos
     val selectedCutPoints = ArrayBuffer[Float]()
-    selectedCutPoints += remainingCPs.first._1
-    selectedCutPoints += remainingCPs.collect().last._1
+    selectedCutPoints += remainingCPs.first._1 //minimo
+    selectedCutPoints += remainingCPs.keys.max //maximo
     var classHistogram = remainingCPs.values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray,x._2))
-    var fullRangeBin = ( (selectedCutPoints(0) , selectedCutPoints(1)) ,classHistogram._1.max.toFloat)
+    var fullRangeBin = ( (selectedCutPoints(0) , selectedCutPoints(1)) ,classHistogram._1)
     finalBins += fullRangeBin
     var GlobalCAIM = fullRangeBin._2
     
@@ -75,24 +82,49 @@ object CAIM {
     while(numRemainingCPs > 0 && !exit)
     {
       //Iterar sobre todos los cutPoints candidatos, obteniendo bins y caim
-      remainingCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long]))] => for (i <- iter) yield i }, true)
+      actualTempBin = -1
+      //TODO initialize tempBins
+      remainingCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Float))] => for (i <- iter) yield computeCAIM(i) }, true)
       
       //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato)
+      
       //actualizar bins y caims de bins
       numRemainingCPs - 1
     }
   }
   
-  def computeCAIM(candidatePoint:(Float, Array[Long]))
+  def computeCAIM(candidatePoint:(Float, (Array[Long],Float))): (Float, (Array[Long],Float)) =
   {
-    
-    var tmpCaim = tmpCaimNumerator
-    //calcular CAIM fijandose en  finalBins para reutilizar CAIM bins y no tener que recalcularlo
-    
-    //USAR FOLD(tmpCaim) ?????????
-    
-    tmpCaimNumerator = tmpCaim
-    tmpCaim = tmpCaim / (finalBins.length + 1)
+    if (candidatePoint._2._2 < 0) //Caso cutPoint ya definitivo
+    {
+      actualTempBin += 1
+      //TODO crear nuevo Bin vacio en el tempBin entre este punto y palante
+      //TODO crear zeroHistogram = (0,0,0,..) tamano nLabels de clase
+      val zeroHistogram = new Array[Long](5)
+      for (i <- 0 until zeroHistogram.length) zeroHistogram(i) = 0
+      tempBins.insert(actualTempBin, (0.toFloat, zeroHistogram))
+      candidatePoint
+    }
+    else
+    {
+      //Nuevo CAIM del Bin de la izquierda 
+      var binHistogram = tempBins(actualTempBin)._2
+      var newPointHistogram = candidatePoint._2._1
+      var newBinHistogram = for(i <- 0 until binHistogram.length) yield binHistogram(i) + newPointHistogram(i)
+      var newCaimBin = ( (newBinHistogram).max ^ 2 ) / newBinHistogram.sum.toFloat
+      tempBins(actualTempBin) = (newCaimBin , newBinHistogram.toArray) //izquierda
+      
+      //Nuevo CAIM del Bin de la derecha
+      binHistogram = tempBins(actualTempBin + 1)._2
+      newPointHistogram = candidatePoint._2._1
+      newBinHistogram = for(i <- 0 until binHistogram.length) yield binHistogram(i) - newPointHistogram(i)
+      newCaimBin = ( (newBinHistogram).max ^ 2 ) / newBinHistogram.sum.toFloat
+      tempBins(actualTempBin + 1) = (newCaimBin , newBinHistogram.toArray) //derecha
+      
+    }
+    //new CAIM point
+    var newCaimPoint = (for (i <- tempBins) yield i._1).sum
+    (candidatePoint._1, (candidatePoint._2._1,newCaimPoint))
   }
   
   //genera (Dimension, Valor), [countlabelClase1, countlabelClase2, ... ]
