@@ -16,7 +16,7 @@ object CAIM {
   //temporal Bins = ( Class histogram, CAIM )
   var tempBins = ArrayBuffer[(Array[Long], Double)] ()
   //bestCandidate = ( Value, CAIM)
-  var bestCandidate = (0.0, -1)
+  var bestCandidate: Tuple2[Float, Double] = (0, -1.0)
   var bestCandidateBins = ArrayBuffer[((Float, Float), (Array[Long], Double))] ()
   var nTempBins = 2
   var actualTempBin = -1
@@ -102,20 +102,22 @@ object CAIM {
       for (i <- finalBins) tempBins += i._2
       nTempBins = nFinalCutPoints
       //inizialize best candidate
-      bestCandidate = (0.0, -1)
+      bestCandidate = (0, -1)
       bestCandidateBins.clear
       
       //generate new CAIM database
       remCPs = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double))] => for (i <- iter) yield computeCAIM(i) }, true)
       
       //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato, haciendo su CAIM = -1)
+      /*
       val bestPoint = remCPs.max()(new Ordering[Tuple2[Float,(Tuple2[Array[Long],Double])]](){
         override def compare(x: (Float,Tuple2[Array[Long],Double]), y: (Float,Tuple2[Array[Long],Double])): Int = Ordering[Double].compare(x._2._2,y._2._2)
       })
-      selectedCutPoints += bestPoint._1
+      */
       
       //TODO transformar remCPs(bestPoint)._2._2 = -1
-      
+      selectedCutPoints += bestCandidate._1
+
       //actualizar bins y caims de bins
       nFinalCutPoints = nFinalCutPoints + 1
       numRemainingCPs = numRemainingCPs - 1
@@ -133,7 +135,7 @@ object CAIM {
       tempBins(actualTempBin) = (candidatePoint._2._1,newCaimBin)
       candidatePoint
     }
-    //TODO arreglar esto, pequeño fix para modificar el valor de los cutPoints escogidos
+    //TODO arreglar esto, pequeño fix que suple el no poder modificar CAIM a -1
     else if (selectedCutPoints.exists(_ == candidatePoint._1))
     {
       actualTempBin += 1
@@ -147,22 +149,29 @@ object CAIM {
       
       //Nuevo CAIM del Bin de la izquierda 
       var binHistogram = tempBins(actualTempBin)._1
-      var newBinHistogram = for(i <- 0 until binHistogram.length) yield binHistogram(i) + newPointHistogram(i)
-      var newCaimBin = ( (newBinHistogram).max ^ 2 ) / newBinHistogram.sum.toDouble
-      tempBins(actualTempBin) = (newBinHistogram.toArray, newCaimBin) //izquierda
+      val newBinHistogramLeft = for(i <- 0 until binHistogram.length) yield binHistogram(i) + newPointHistogram(i)
+      val newCaimBinLeft = ( (newBinHistogramLeft).max ^ 2 ) / newBinHistogramLeft.sum.toDouble
+      tempBins(actualTempBin) = (newBinHistogramLeft.toArray, newCaimBinLeft) //izquierda
       
       //Nuevo CAIM del Bin de la derecha
       binHistogram = tempBins(actualTempBin + 1)._1
-      newBinHistogram = for(i <- 0 until binHistogram.length) yield binHistogram(i) - newPointHistogram(i)
-      newCaimBin = ( (newBinHistogram).max ^ 2 ) / newBinHistogram.sum.toDouble
-      tempBins(actualTempBin + 1) = (newBinHistogram.toArray, newCaimBin) //derecha
+      val newBinHistogramRight = for(i <- 0 until binHistogram.length) yield binHistogram(i) - newPointHistogram(i)
+      val newCaimBinRight = ( (newBinHistogramRight).max ^ 2 ) / newBinHistogramRight.sum.toDouble
+      tempBins(actualTempBin + 1) = (newBinHistogramRight.toArray, newCaimBinRight) //derecha
       
       //Nuevo CAIM total del punto
       var newCaimPoint = (for (i <- tempBins) yield i._2).sum / nTempBins
       //Comprobar si es mejor que el mejor CAIM obtenido hasta ahora
       if (newCaimPoint > bestCandidate._2)
       {
-        
+        //track and update bestCandidate and bestCandidateBins
+        bestCandidateBins = finalBins
+        var nBin = 0
+        var found = false
+        bestCandidateBins.insert(actualTempBin, ( (finalBins(actualTempBin)._1._1,candidatePoint._1), (newBinHistogramRight.toArray,newCaimBinRight)))
+        bestCandidateBins.insert(actualTempBin, ( (candidatePoint._1,finalBins(actualTempBin + 1)._1._1), (newBinHistogramLeft.toArray,newCaimBinLeft)))
+        if (!found) println("Error al buscar el bin que se va a dividir con el nuevo punto!")
+        bestCandidate = (candidatePoint._1,newCaimPoint)
       }
       
       (candidatePoint._1, (candidatePoint._2._1,newCaimPoint))
