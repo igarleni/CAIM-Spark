@@ -29,8 +29,11 @@ object MainClass {
     
     //Aplicar CAIM y obtener los bins
     //val bins:RDD[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
-    CAIM.discretizeData(data,sc, MEASURE_COLS)
+    val result = CAIM.discretizeData(data,sc, MEASURE_COLS)
     
+    //Print data
+    println("Tamaño del resultado " + result.length)
+    for(bin <- result) println("Dimension " + bin._1 + ": (" + bin._2._1 + ", " + bin._2._2 + ")")
     //transformar los datos
     
     //guardar datos nuevos
