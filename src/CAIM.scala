@@ -44,7 +44,6 @@ object CAIM {
         })
      val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues)     
      
-     
      //Aplicar CAIM a cada dimension
      val bins = ArrayBuffer[(Int,(Float,Float))]()
      for (dimension <- 0 until cols)
@@ -57,6 +56,11 @@ object CAIM {
   
   def caimDiscretization(dimension:Int, remainingCPs: RDD[(Float, (Array[Long], Double, Int))]): ArrayBuffer[(Int,(Float,Float))] =
   {
+    //TESTING
+    println("--------------------------------------")
+    println("DIMENSION --> " + dimension)
+    //END TESTING
+    
     var remCPs = remainingCPs
    /* INICIALIZACION DEL BUCLE
     * 
@@ -70,9 +74,10 @@ object CAIM {
     selectedCutPoints.clear
     selectedCutPoints += remainingCPs.first._1 //minimo
     selectedCutPoints += remainingCPs.keys.max //maximo
-    globalCaim = -Double.MaxValue
-    var classHistogram = remainingCPs.values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, globalCaim, 0))
-    var fullRangeBin = ( (selectedCutPoints(0) , selectedCutPoints(1)) ,classHistogram)
+    
+    var classHistogram = remainingCPs.values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, 0, 0))
+    globalCaim = (classHistogram._1.max ^2) / classHistogram._1.sum.toDouble
+    var fullRangeBin = ( (selectedCutPoints(0) , selectedCutPoints(1)) ,(classHistogram._1, globalCaim, 0))
     finalBins.clear()
     finalBins += fullRangeBin
     nTempBins = 2.0
@@ -85,22 +90,48 @@ object CAIM {
     
     while(numRemainingCPs > 0 && !exit)
     {
-      //initialize tempBins
+      //TESTING
+      println("-------")
+      println("NumRemainingCPs (iteracion numero..) --> " + numRemainingCPs)
+      println("DATOS INICIALES: ")
+      print("Selected cutPoints --> ")
+      for(i <- selectedCutPoints) print(i + ", ")
+      println
+      println("final Bins --> ")
+      for(i <- finalBins) print("(" + i._1._1 + ", " + i._1._2 + "):" + i._2._2 + "; ")
+      println
+      println("CALCULO DE NUEVOS CAIMS INICIADO...")
+      println
+      //END TESTING
       
       //generate new CAIM database
+      
       val bRemCPs = sc.broadcast(remCPs)
-      remCPs = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double, Int))] => for (i <- iter) yield computeCAIM(i, bRemCPs.value.filter(item => item._2._3 == i._2._3)) }, true)
+      //remCPs = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double, Int))] => for (i <- iter) yield computeCAIM(i, bRemCPs.value.filter(item => item._2._3 == i._2._3)) }, true)
+      remCPs = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double, Int))] => for (i <- iter) yield (i._1,(i._2._1, -1, i._2._3)) }, true)
+      println("Caim del primero: " + remCPs.first._2._2)
+      
       
       //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato, haciendo su CAIM = -1)
       val bestCandidate = remCPs.max()(new Ordering[Tuple2[Float, Tuple3[Array[Long],Double, Int]]]() {
         override def compare(x: (Float, (Array[Long],Double, Int)), y: (Float, (Array[Long],Double, Int))): Int = 
         Ordering[Double].compare(x._2._2, y._2._2)
       })
+      
+      //TESTING
+      println("CALCULO DE NUEVOS CAIMS FINALIZADO...")
+      println("Mejor candidato --> " + bestCandidate._1)
+      println("Caim de mejor candidato:" + bestCandidate._2._2 + " |vs| Caim global actual:" + globalCaim)
+      println("nTempBins:" + nTempBins + " |vs| numLabels:" + numLabels)
+      println("ENTRANDO A INTRODUCIR (o no) NUEVO PUNTO...")
+      println
+      //END TESTING
+      
       if(bestCandidate._2._2 > globalCaim || nTempBins < numLabels)
       {
         selectedCutPoints += bestCandidate._1
         
-        //ArrayBuffer ( (CutPointInit, CutPointEnd)  , (ClassHistogram, CAIM, binID) )
+        //finalBins: ArrayBuffer ( (CutPointInit, CutPointEnd)  , (ClassHistogram, CAIM, binID) )
         var i = 0
         var found = false
         while (i < finalBins.length && !found)
@@ -118,6 +149,14 @@ object CAIM {
             finalBins(i) = binRight
             finalBins.insert(i, binLeft)
             globalCaim = bestCandidate._2._2 //TODO testear si es igual a calcularlo aqui directamente
+            
+            //TESTING
+            val caimBins = ( (binLeft._2._1.max ^2) / binLeft._2._1.sum + (binRight._2._1.max ^2) / binRight._2._1.sum )
+            var sumBins = 0.0
+            for(item <- finalBins if (item._2._3 != bestCandidate._2._3)) sumBins += item._2._2
+            println("Caim definido: " + globalCaim + ", Caim recalculado: " + sumBins/nTempBins)
+            println
+            //END TESTING
           }
         }
         if(!found) println("Bin no encontrado!")
@@ -126,7 +165,21 @@ object CAIM {
       }
       else
         exit = true
+      println("FIN DE ANADIDO DE PUNTO.\nFIN DE ITERACION")
+      println
     }
+    //TESTING
+    print("DATOS FINALES:")
+    print("Selected cutPoints --> ")
+    for(i <- selectedCutPoints) print(i + ", ")
+    println
+    print("final Bins --> ")
+    for(i <- finalBins) print("(" + i._1._1 + ", " + i._1._2 + "); ")
+    println
+    println("END DIMENSION " + dimension)
+    println
+    //END TESTING
+    
     //add dimension ID to bins
     val result = ArrayBuffer[(Int,(Float,Float))]()
     result ++= (for (bin <- finalBins) yield (dimension, bin._1))
@@ -136,10 +189,11 @@ object CAIM {
   //candidatePoint = (value, (ClassHistogram, CAIM))
   def computeCAIM(candidatePoint:(Float, (Array[Long],Double, Int)), dataBin: RDD[(Float, (Array[Long],Double, Int))]): (Float, (Array[Long],Double, Int)) =
   {
-    //TODO arreglar esto, pequeño fix que suple el no poder modificar CAIM a -1
-    if ((candidatePoint._2._2 < 0)  || selectedCutPoints.exists(_ == candidatePoint._1))
+    //TODO arreglar esto, pequeño fix que suple el no poder modificar CAIM a -1 --> if(candidatePoint._2._2 < 0) 
+    if (selectedCutPoints.exists(_ == candidatePoint._1))
     {
-      candidatePoint
+      //candidatePoint
+      (candidatePoint._1,(candidatePoint._2._1, -2, candidatePoint._2._3))
     }
     else //Caso 2 = cutPoint es candidato
     {
@@ -149,12 +203,12 @@ object CAIM {
       val valuesRight = dataBin.filter(_._1 >= candidatePoint._1).values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, 0, 0))
       
       //calcular CAIM
-      val caimBins = ( (valuesLeft._1.max ^2) / valuesLeft._1.sum + (valuesRight._1.max ^2) / valuesRight._1.sum )
-      var sumBins = 0.0
-      for(item <- finalBins if (item._2._3 != candidatePoint._2._3)) sumBins += item._2._2
+      var caimBins = ( (valuesLeft._1.max ^2) / valuesLeft._1.sum.toDouble) + ((valuesRight._1.max ^2) / valuesRight._1.sum.toDouble )
+      for(item <- finalBins if (item._2._3 != candidatePoint._2._3)) caimBins += item._2._2
       
       //return result
-      (candidatePoint._1,(candidatePoint._2._1, sumBins/nTempBins, candidatePoint._2._3))
+      //(candidatePoint._1,(candidatePoint._2._1, caimBins/nTempBins, candidatePoint._2._3))
+      (candidatePoint._1,(candidatePoint._2._1, -1, candidatePoint._2._3))
     }
   }
   

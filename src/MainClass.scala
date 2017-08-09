@@ -20,7 +20,6 @@ object MainClass {
     conf.setAppName("IPDdiscretization")
     val sc = new SparkContext(conf)
     
-    println("----------------App init----------------")
     readInputString(args)
     //leer datos y transformarlos
     val file = sc.textFile(FILE_INPUT)
