@@ -30,7 +30,9 @@ object CAIM {
     //de cada distinct
     val classDistrib = data.map(d => bLabels2Int.value(d.label)).countByValue()
     val bclassDistrib = sc.broadcast(classDistrib)
-    
+    println("numLabels: " + numLabels)
+    println("bLabelsToInt: ")
+    bLabels2Int.value.foreach(println(_))
     val featureValues =
         data.flatMap({
           case LabeledPoint(label, dv: DenseVector) =>
@@ -42,6 +44,7 @@ object CAIM {
             c(bLabels2Int.value(label)) = 1L
             for (i <- sv.indices.indices) yield ((sv.indices(i), sv.values(i).toFloat), c)
         })
+     println("featureValues first: " + featureValues.first._1 + ", " + featureValues.first._2)
      val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues)     
      
      //Aplicar CAIM a cada dimension
@@ -103,6 +106,8 @@ object CAIM {
       print("final Bins --> ")
       for(i <- finalBins) print("(" + i._1._1 + ", " + i._1._2 + "):" + i._2._2 + "; ")
       println
+      println("global Caim --> " + globalCaim)
+      println("num temp Bins --> " + nTempBins)
       println
       println("CALCULO DE NUEVOS CAIMS INICIADO...")
       //END TESTING
@@ -110,8 +115,9 @@ object CAIM {
       //generate new CAIM database
       
       val bRemCPs = sc.broadcast(remCPs)
+      println("primeros de broadcast --> " + bRemCPs.value.first)
       remCPs = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double, Int))] => for (i <- iter) yield computeCAIM(i, bRemCPs.value.filter(item => item._2._3 == i._2._3)) }, true)
-      
+      println("primeros de remCPs despues del recalculo de CAIM --> " + remCPs.first)
       //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato, haciendo su CAIM = -1)
       val bestCandidate = remCPs.max()(new Ordering[Tuple2[Float, Tuple3[Array[Long],Double, Int]]]() {
         override def compare(x: (Float, (Array[Long],Double, Int)), y: (Float, (Array[Long],Double, Int))): Int = 
@@ -175,6 +181,8 @@ object CAIM {
       print("final Bins --> ")
       for(i <- finalBins) print("(" + i._1._1 + ", " + i._1._2 + "):" + i._2._2 + "; ")
       println
+      println("global Caim --> " + globalCaim)
+      println("num temp Bins --> " + nTempBins)
       println
       //END TESTING
     }
@@ -240,7 +248,7 @@ object CAIM {
     // Sort these values to perform the boundary points evaluation
     val start = System.currentTimeMillis()
     val result = distinctValues.sortByKey()
-    println("done sortByKey in " + (System.currentTimeMillis() - start))
+    //println("done sortByKey in " + (System.currentTimeMillis() - start))
     result
   }
   

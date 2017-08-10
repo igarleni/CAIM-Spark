@@ -13,21 +13,26 @@ object MainClass {
   
   def main(args:Array[String]): Unit = 
   {
+    
     val conf = new SparkConf()
     conf.set("spark.cores.max", "20")
     conf.set("spark.executor.memory", "6g")
     conf.set("spark.kryoserializer.buffer.max", "512")
-    conf.setAppName("IPDdiscretization")
+    conf.setAppName("CAIMdiscretization")
     val sc = new SparkContext(conf)
-    
+    /*
+    val conf = new SparkConf().setAppName("CAIMdiscretization").setMaster("local")
+    val sc = new SparkContext(conf)
+    */
     readInputString(args)
     //leer datos y transformarlos
     val file = sc.textFile(FILE_INPUT)
+    println("Primera linea del CSV --> " + file.first)
     val intermediate = file.map(line => line.split(FIELD_DELIMITER))
     val data:RDD[LabeledPoint] = file.map(line => line.split(FIELD_DELIMITER)).map(line => new LabeledPoint(line(line.length -1).toDouble, Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
-    
+    println("Primer punto del dataset: label -->" + data.first.label)
     //Aplicar CAIM y obtener los bins
-    //val bins:RDD[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
+    //val ArrayBuffer[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
     val result = CAIM.discretizeData(data,sc, MEASURE_COLS)
     
     //Print data
