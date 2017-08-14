@@ -81,7 +81,9 @@ object CAIM {
     selectedCutPoints += remainingCPs.keys.max //maximo
     
     var classHistogram = remainingCPs.values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, 0, 0))
-    globalCaim = (classHistogram._1.max ^2) / classHistogram._1.sum.toDouble
+    //TODO check if initialization of globalCaim is correct
+    //globalCaim = (classHistogram._1.max * classHistogram._1.max) / classHistogram._1.sum.toDouble
+    globalCaim = -Double.MaxValue
     var fullRangeBin = ( (selectedCutPoints(0) , selectedCutPoints(1)) ,(classHistogram._1, globalCaim, 0))
     finalBins.clear()
     finalBins += fullRangeBin
@@ -115,9 +117,16 @@ object CAIM {
       //generate new CAIM database
       
       val bRemCPs = sc.broadcast(remCPs)
-      println("primeros de broadcast --> " + bRemCPs.value.first)
       remCPs = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double, Int))] => for (i <- iter) yield computeCAIM(i, bRemCPs.value.filter(item => item._2._3 == i._2._3)) }, true)
-      println("primeros de remCPs despues del recalculo de CAIM --> " + remCPs.first)
+      remCPs.persist
+      //TESTING
+      println("CAIMS OBTENIDOS: ")
+      var acum = 0
+      remCPs.collect.foreach({item =>
+        acum += item._2._1.sum.toInt
+        println("Punto " + item._1 + ", NumPoints: " + item._2._1.sum + ", Acumulator: " + acum + ", CAIM: " + item._2._2)
+      })
+      //END TESTING
       //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato, haciendo su CAIM = -1)
       val bestCandidate = remCPs.max()(new Ordering[Tuple2[Float, Tuple3[Array[Long],Double, Int]]]() {
         override def compare(x: (Float, (Array[Long],Double, Int)), y: (Float, (Array[Long],Double, Int))): Int = 
@@ -131,7 +140,7 @@ object CAIM {
       println("Caim de mejor candidato:" + bestCandidate._2._2 + " |vs| Caim global actual:" + globalCaim)
       println("nTempBins:" + nTempBins + " |vs| numLabels:" + numLabels)
       println
-      println("ENTRANDO A INTRODUCIR (o no) NUEVO PUNTO...")
+      println("ENTRANDO A INTRODUCIR NUEVO PUNTO...")
       //END TESTING
       
       if(bestCandidate._2._2 > globalCaim || nTempBins < numLabels)
@@ -147,21 +156,29 @@ object CAIM {
           {
             found = true
             val dataBin = bRemCPs.value.filter(item => item._2._3 == i)
-            //TODO crear bin y recalcular caim
-            val valuesLeft = dataBin.filter(_._1 < bestCandidate._1).values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, 0, 0))
-            val valuesRight = dataBin.filter(_._1 >= bestCandidate._1).values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, 0, 0))
-            val caimLeft = (valuesLeft._1.max ^2) / valuesLeft._1.sum.toDouble
-            val caimRight = (valuesRight._1.max ^2) / valuesRight._1.sum.toDouble
+            //crear bin y recalcular caim
+            dataBin.cache
+            val valuesLeft = dataBin.filter(_._1 <= bestCandidate._1).values.reduce((x,y) => ((for(i <- 0 until numLabels) yield x._1(i) + y._1(i)).toArray, 0, 0))
+            val valuesRight = dataBin.filter(_._1 > bestCandidate._1).values.reduce((x,y) => ((for(i <- 0 until numLabels) yield x._1(i) + y._1(i)).toArray, 0, 0))
+            val caimLeft = (valuesLeft._1.max * valuesLeft._1.max) / (valuesLeft._1.sum.toDouble)
+            val caimRight = (valuesRight._1.max * valuesLeft._1.max) / (valuesRight._1.sum.toDouble)
+            //TESTING
+            println("LEFT --> Valor maximo: " + valuesLeft._1.max + ", suma de puntos: " + valuesLeft._1.sum.toDouble + ", CAIM: " + caimLeft)
+            println("RIGHT --> Valor maximo: " + valuesRight._1.max + ", suma de puntos: " + valuesRight._1.sum.toDouble + ", CAIM: " + caimRight)
+            //END TESTING
             val binLeft = ((finalBins(i)._1._1 , bestCandidate._1), (valuesLeft._1 , caimLeft , i ))
             val binRight = ((bestCandidate._1 , finalBins(i)._1._2), (valuesRight._1 , caimRight , i + 1))
             finalBins(i) = binRight
             finalBins.insert(i, binLeft)
-            globalCaim = bestCandidate._2._2 //TODO testear si es igual a calcularlo aqui directamente
+            globalCaim = bestCandidate._2._2
             
             //TESTING
             var sumBins = 0.0
-            for(item <- finalBins) sumBins += item._2._2
-            println("Caim definido: " + globalCaim + ", Caim recalculado: " + sumBins/nTempBins)
+            for(item <- finalBins){
+              sumBins += item._2._2
+              println("Bin (" + item._1._1 + "," + + item._1._2 + ") CAIM--> " + item._2._2)
+            }
+            println("SE INTRODUCE --> Caim definido: " + globalCaim + ", Caim recalculado: " + sumBins/nTempBins)
             //END TESTING
           }
         }
@@ -211,17 +228,17 @@ object CAIM {
     if (selectedCutPoints.exists(_ == candidatePoint._1))
     {
       //candidatePoint
-      (candidatePoint._1,(candidatePoint._2._1, -2, candidatePoint._2._3))
+      (candidatePoint._1,(candidatePoint._2._1, -1, candidatePoint._2._3))
     }
     else //Caso 2 = cutPoint es candidato
     {
       //filtrar puntos de interes, dividir datos en dos, y obtener suma de histogramas
       dataBin.cache
-      val valuesLeft = dataBin.filter(_._1 < candidatePoint._1).values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, 0, 0))
-      val valuesRight = dataBin.filter(_._1 >= candidatePoint._1).values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, 0, 0))
+      val valuesLeft = dataBin.filter(_._1 <= candidatePoint._1).values.reduce((x,y) => ((for(i <- 0 until numLabels) yield x._1(i) + y._1(i)).toArray, 0, 0))
+      val valuesRight = dataBin.filter(_._1 > candidatePoint._1).values.reduce((x,y) => ((for(i <- 0 until numLabels) yield x._1(i) + y._1(i)).toArray, 0, 0))
       
       //calcular CAIM
-      var caimBins = ( (valuesLeft._1.max ^2) / valuesLeft._1.sum.toDouble) + ((valuesRight._1.max ^2) / valuesRight._1.sum.toDouble )
+      var caimBins = ( (valuesLeft._1.max * valuesLeft._1.max) / valuesLeft._1.sum.toDouble) + ((valuesRight._1.max * valuesRight._1.max) / valuesRight._1.sum.toDouble )
       for(item <- finalBins if (item._2._3 != candidatePoint._2._3)) caimBins += item._2._2
       
       //return result
