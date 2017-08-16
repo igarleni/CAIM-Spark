@@ -3,6 +3,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.rdd._
 import org.apache.spark.mllib.regression.LabeledPoint
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
+import scala.collection.mutable.ArrayBuffer
 
 object MainClass {
   private var FILE_INPUT:String = null
@@ -31,13 +32,18 @@ object MainClass {
     val intermediate = file.map(line => line.split(FIELD_DELIMITER))
     val data:RDD[LabeledPoint] = file.map(line => line.split(FIELD_DELIMITER)).map(line => new LabeledPoint(line(line.length -1).toDouble, Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
     println("Primer punto del dataset: label -->" + data.first.label)
+    println
+    println("INICIANDO CAIM...")
     //Aplicar CAIM y obtener los bins
-    //val ArrayBuffer[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
-    val result = CAIM.discretizeData(data,sc, MEASURE_COLS)
+    val result: ArrayBuffer[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
     
-    //Print data
-    println("Tamaño del resultado " + result.length)
+    //TESTING
+    println
+    println("CAIM FINALIZADO...")
+    println("RESULTADOS:")
     for(bin <- result) println("Dimension " + bin._1 + ": (" + bin._2._1 + ", " + bin._2._2 + ")")
+    //END TESTING
+    
     //transformar los datos
     
     //guardar datos nuevos
