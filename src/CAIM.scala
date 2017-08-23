@@ -91,6 +91,7 @@ object CAIM {
     var numRemainingCPs = remainingCPs.count()
     numRemainingCPs -= 2 //minimo y maximo extraidos antes
     var exit = false
+    val bRemCPs = sc.broadcast(remCPs)
     
     while(numRemainingCPs > 0 && !exit)
     {
@@ -113,17 +114,16 @@ object CAIM {
       
       //generate new CAIM database
       
-      val bRemCPs = sc.broadcast(remCPs)
-      remCPs = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double))] => for (i <- iter) yield computeCAIM(i, bRemCPs) }, true)
-      remCPs.persist
+      val remCPsCAIM = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double))] => for (i <- iter) yield computeCAIM(i, bRemCPs) }, true)
+      remCPsCAIM.persist
       //TESTING
       println("CAIMS OBTENIDOS: ")
-      remCPs.collect.foreach({item =>
+      remCPsCAIM.collect.foreach({item =>
         println("Punto " + item._1 + ", CAIM: " + item._2._2)
       })
       //END TESTING
       //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato, haciendo su CAIM = -1)
-      val bestCandidate = remCPs.max()(new Ordering[Tuple2[Float, Tuple2[Array[Long],Double]]]() {
+      val bestCandidate = remCPsCAIM.max()(new Ordering[Tuple2[Float, Tuple2[Array[Long],Double]]]() {
         override def compare(x: (Float, (Array[Long],Double)), y: (Float, (Array[Long],Double))): Int = 
         Ordering[Double].compare(x._2._2, y._2._2)
       })
