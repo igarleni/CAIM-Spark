@@ -6,11 +6,11 @@ import org.apache.spark.mllib.linalg.{Vector, Vectors}
 import scala.collection.mutable.ArrayBuffer
 
 object MainClass {
-  private var FILE_INPUT:String = null
-  private var FILE_CP_OUTPUT:String = null
-  private var FILE_DATA_OUTPUT:String = null
-  private var MEASURE_COLS:Int = 0
-  private var FIELD_DELIMITER:String = ";"
+  var FILE_INPUT:String = null
+  var FILE_CP_OUTPUT:String = null
+  var FILE_DATA_OUTPUT:String = null
+  var MEASURE_COLS:Int = 0
+  var FIELD_DELIMITER:Char = ';'
   
   def main(args:Array[String]): Unit = 
   {
@@ -26,12 +26,19 @@ object MainClass {
     val sc = new SparkContext(conf)
     */
     readInputString(args)
+    
     //leer datos y transformarlos
+    println("LEYENDO FICHERO...")
     val file = sc.textFile(FILE_INPUT)
     println("Primera linea del CSV --> " + file.first)
-    val intermediate = file.map(line => line.split(FIELD_DELIMITER))
-    val data:RDD[LabeledPoint] = file.map(line => line.split(FIELD_DELIMITER)).map(line => new LabeledPoint(line(line.length -1).toDouble, Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
-    println("Primer punto del dataset: label -->" + data.first.label)
+    val delimiter = FIELD_DELIMITER
+    val intermediate = file.map(_.split(delimiter))
+    val text = intermediate.first
+    println("field Delimiter: " + delimiter)
+    println("Primera linea del intermediate --> ")
+    text.foreach(println(_))
+    val data:RDD[LabeledPoint] = file.map(line => line.split(delimiter)).map(line => new LabeledPoint(line(line.length -1).toDouble, Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
+    
     println
     println("INICIANDO CAIM...")
     //Aplicar CAIM y obtener los bins
@@ -106,7 +113,7 @@ object MainClass {
     {
       if (args(i).equals("-FIELD_DELIMITER"))
       {
-        FIELD_DELIMITER = args(i+1)
+        FIELD_DELIMITER = args(i+1).charAt(0)
         found = true
       }
     }

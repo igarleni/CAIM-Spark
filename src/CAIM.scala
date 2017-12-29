@@ -8,7 +8,7 @@ import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 
 object CAIM {
-  var numLabels = 0
+  var nLabels = 0
   //Bins variables = ( (CutPointInit, CutPointEnd)  , (ClassHistogram, CAIM) )
   val finalBins = ArrayBuffer[((Float, Float), Double)] ()
   var globalCaim = -Double.MaxValue
@@ -22,7 +22,8 @@ object CAIM {
     sc = sPc
     //obtenemos los labels de la variable clase
     val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
-    numLabels = labels2Int.size
+    nLabels = labels2Int.size
+    val numLabels = nLabels
     //metemos en cache la variable
     val bLabels2Int = sc.broadcast(labels2Int)
     
@@ -30,7 +31,7 @@ object CAIM {
     //de cada distinct
     val classDistrib = data.map(d => bLabels2Int.value(d.label)).countByValue()
     val bclassDistrib = sc.broadcast(classDistrib)
-    println("Num Labels: " + numLabels)
+
     val featureValues =
         data.flatMap({
           case LabeledPoint(label, dv: DenseVector) =>
@@ -41,17 +42,36 @@ object CAIM {
             val c = Array.fill[Long](numLabels)(0L)
             c(bLabels2Int.value(label)) = 1L
             for (i <- sv.indices.indices) yield ((sv.indices(i), sv.values(i).toFloat), c)
-        })
-     val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues)     
-     
-     //Aplicar CAIM a cada dimension
-     val bins = ArrayBuffer[(Int,(Float,Float))]()
-     for (dimension <- 0 until cols)
-     {
-       val dataDim = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value,(hlabels, 0.0))}) 
-       bins ++= caimDiscretization(dimension,dataDim)
-     }
-     bins
+    })
+    //TESTING
+    println("Num Labels: " + numLabels)
+    println
+    val punto = data.first
+    println("Primer punto del dataset: ")
+    punto.features.toArray.foreach(println(_))
+    println
+    println("Variable bLabels2Int: ")
+    bLabels2Int.value.foreach(println(_))
+    println
+    println("FeatureValues first: " + featureValues.first._1)
+    //END TESTING
+    
+    
+    val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues)
+    println("sortedValues first: " + sortedValues.first._1)
+    /* 
+    //Aplicar CAIM a cada dimension
+    val bins = ArrayBuffer[(Int,(Float,Float))]()
+    for (dimension <- 0 until cols)
+    {
+      val dataDim = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value,(hlabels, 0.0))}) 
+      bins ++= caimDiscretization(dimension,dataDim)
+    }
+    bins
+    * 
+    */
+    
+    new ArrayBuffer[(Int,(Float,Float))]()
   }
   
   def caimDiscretization(dimension:Int, remainingCPs: RDD[(Float, (Array[Long], Double))]): ArrayBuffer[(Int,(Float,Float))] =
@@ -64,6 +84,7 @@ object CAIM {
     println
     //END TESTING
     
+    val numLabels = nLabels
     var remCPs = remainingCPs
    /* INICIALIZACION DEL BUCLE
     * 
@@ -232,6 +253,7 @@ object CAIM {
   //candidatePoint = (value, (ClassHistogram, CAIM))
   def computeCAIM(candidatePoint:(Float, (Array[Long],Double)), dataBc: Broadcast[RDD[(Float, (Array[Long],Double))]]): (Float, (Array[Long],Double)) =
   {
+    val numLabels = nLabels
     //TODO arreglar esto, pequeño fix que suple el no poder modificar CAIM a -1 --> if(candidatePoint._2._2 < 0) 
     if (selectedCutPoints.exists(_ == candidatePoint._1))
     {
