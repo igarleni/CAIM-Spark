@@ -9,4 +9,4 @@ results/*
 
 #config
 .settings/*
-.pom.xml
+pom.xml
