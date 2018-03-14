@@ -8,278 +8,146 @@ import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 
 object CAIM {
-  var nLabels = 0
-  //Bins variables = ( (CutPointInit, CutPointEnd)  , (ClassHistogram, CAIM) )
-  val finalBins = ArrayBuffer[((Float, Float), Double)] ()
-  var globalCaim = -Double.MaxValue
-  var nTempBins = 2.0
-  val selectedCutPoints = ArrayBuffer[Float]()
-  var sc: SparkContext = null
-  
-  def discretizeData(data: RDD[LabeledPoint], sPc:SparkContext, cols:Int): ArrayBuffer[(Int,(Float,Float))] =
-  //def discretizeData(data: RDD[LabeledPoint], sc:SparkContext, cols:Int)
-  {
-    sc = sPc
-    //obtenemos los labels de la variable clase
-    val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
-    nLabels = labels2Int.size
-    val numLabels = nLabels
-    //metemos en cache la variable
-    val bLabels2Int = sc.broadcast(labels2Int)
-    
-    //crea un map de los index labels y los cuenta, obteniendo el numero de apariciones
-    //de cada distinct
-    val classDistrib = data.map(d => bLabels2Int.value(d.label)).countByValue()
-    val bclassDistrib = sc.broadcast(classDistrib)
-
-    val featureValues =
+	var nLabels = 0
+	var sc: SparkContext = null
+	
+	def discretizeData(data: RDD[LabeledPoint], sPc:SparkContext, cols:Int): ArrayBuffer[(Int,(Float,Float))] =
+	{
+		sc = sPc
+		//obtenemos los labels de la variable clase
+		val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
+		nLabels = labels2Int.size
+		//creamos un map de los index labels y los cuenta, obteniendo el numero de apariciones
+		//de cada distinct
+		val bLabels2Int = sc.broadcast(labels2Int)
+		val classDistrib = data.map(d => bLabels2Int.value(d.label)).countByValue()
+		val bclassDistrib = sc.broadcast(classDistrib)
+		val featureValues =
         data.flatMap({
-          case LabeledPoint(label, dv: DenseVector) =>
-            val c = Array.fill[Long](numLabels)(0L)
-            c(bLabels2Int.value(label)) = 1L
-            for (i <- dv.values.indices) yield ((i, dv(i).toFloat), c)
-          case LabeledPoint(label, sv: SparseVector) =>
-            val c = Array.fill[Long](numLabels)(0L)
-            c(bLabels2Int.value(label)) = 1L
-            for (i <- sv.indices.indices) yield ((sv.indices(i), sv.values(i).toFloat), c)
-    })
-    //TESTING
-    println("Num Labels: " + numLabels)
-    println
-    val punto = data.first
-    println("Primer punto del dataset: ")
-    punto.features.toArray.foreach(println(_))
-    println
-    println("Variable bLabels2Int: ")
-    bLabels2Int.value.foreach(println(_))
-    println
-    println("FeatureValues first: " + featureValues.first._1)
-    //END TESTING
-    
-    
-    val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues)
-    println("sortedValues first: " + sortedValues.first._1)
-    /* 
-    //Aplicar CAIM a cada dimension
-    val bins = ArrayBuffer[(Int,(Float,Float))]()
-    for (dimension <- 0 until cols)
-    {
-      val dataDim = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value,(hlabels, 0.0))}) 
-      bins ++= caimDiscretization(dimension,dataDim)
-    }
-    bins
-    * 
-    */
-    
-    new ArrayBuffer[(Int,(Float,Float))]()
-  }
-  
-  def caimDiscretization(dimension:Int, remainingCPs: RDD[(Float, (Array[Long], Double))]): ArrayBuffer[(Int,(Float,Float))] =
-  {
-    //TESTING
-    println
-    println("//--------------------------------------//")
-    println("//------------ DIMENSION " + dimension + " -------------//") 
-    println("//--------------------------------------//")
-    println
-    //END TESTING
-    
-    val numLabels = nLabels
-    var remCPs = remainingCPs
-   /* INICIALIZACION DEL BUCLE
-    * 
-    * remainingCPs = inVariable --> posibles cutPoints, en cola para analizar
-    * numRemainingCPs = length(remainingCPs) --> ...
-    * selectedCutPoints = {minValue, maxValue} --> puntos de corte seleccionados
-    * finalBins = {minValue-maxValue} --> bins/particiones actuales
-    * nTempBins = 2 --> numero de temporal Bins de la iteracion actual
-    * 
-    * */
-    selectedCutPoints.clear
-    selectedCutPoints += remainingCPs.first._1 //minimo
-    selectedCutPoints += remainingCPs.keys.max //maximo
-    
-    var classHistogram = remainingCPs.values.reduce((x,y) => ((for(i <- 0 until x._1.length) yield x._1(i) + y._1(i)).toArray, 0))
-    globalCaim = -Double.MaxValue
-    //min cutPoint esta como el minimo valor de float para que entre dentro de los rangos al escanear --> dataBin = (min < x <= max)
-    var fullRangeBin = ( (Float.MinValue , selectedCutPoints(1)), globalCaim)  
-    finalBins.clear()
-    finalBins += fullRangeBin
-    nTempBins = 2.0
-    //TODO min and max --> set CAIM = -1
-    
-    /*variables temporales de cada iteracion*/
-    var numRemainingCPs = remainingCPs.count()
-    numRemainingCPs -= 2 //minimo y maximo extraidos antes
-    var exit = false
-    val bRemCPs = sc.broadcast(remCPs)
-    
-    while(numRemainingCPs > 0 && !exit)
-    {
-      //TESTING
-      println("-----------------------")
-      println("NumRemainingCPs (iteracion numero..) --> " + numRemainingCPs)
-      println("-----------------------")
-      println("DATOS INICIALES: ")
-      print("Selected cutPoints --> ")
-      for(i <- selectedCutPoints) print(i + ", ")
-      println
-      print("final Bins --> ")
-      for(i <- finalBins) print("(" + i._1._1 + ", " + i._1._2 + "):" + i._2 + "; ")
-      println
-      println("global Caim --> " + globalCaim)
-      println("num temp Bins --> " + nTempBins)
-      println
-      println("CALCULO DE NUEVOS CAIMS INICIADO...")
-      //END TESTING
-      
-      //generate new CAIM database
-      
-      val remCPsCAIM = remCPs.mapPartitions({ iter: Iterator[(Float, (Array[Long],Double))] => for (i <- iter) yield computeCAIM(i, bRemCPs) }, true)
-      remCPsCAIM.persist
-      //TESTING
-      println("CAIMS OBTENIDOS: ")
-      remCPsCAIM.collect.foreach({item =>
-        println("Punto " + item._1 + ", CAIM: " + item._2._2)
-      })
-      //END TESTING
-      //Coger el mejor CAIM y anadir ese punto a los cutPoints definitivos (eliminarlo de candidato, haciendo su CAIM = -1)
-      val bestCandidate = remCPsCAIM.max()(new Ordering[Tuple2[Float, Tuple2[Array[Long],Double]]]() {
-        override def compare(x: (Float, (Array[Long],Double)), y: (Float, (Array[Long],Double))): Int = 
-        Ordering[Double].compare(x._2._2, y._2._2)
-      })
-      /*
-       * otra forma de hacerlo seria bestCandidate = mapPartitions.max
-       * sacar el filter de la funcion y ponerlo dentro de mappartitions
-       * broadcast selectedCutpoints y finalBins
-       * el mapPartitions debe generar la lista de (point:float, CAIM:double)
-       * */
-      //TESTING
-      println("CALCULO DE NUEVOS CAIMS FINALIZADO...")
-      println
-      println("Mejor candidato --> " + bestCandidate._1)
-      println("Caim de mejor candidato:" + bestCandidate._2._2 + " |vs| Caim global actual:" + globalCaim)
-      println("nTempBins:" + nTempBins + " |vs| numLabels:" + numLabels)
-      println
-      println("ENTRANDO A INTRODUCIR NUEVO PUNTO...")
-      //END TESTING
-      
-      if(bestCandidate._2._2 > globalCaim || nTempBins < numLabels)
-      {
-        selectedCutPoints += bestCandidate._1
-        
-        //finalBins: ArrayBuffer ( (CutPointInit, CutPointEnd)  , (ClassHistogram, CAIM, binID) )
-        var i = 0
-        var found = false
-        while (i < finalBins.length && !found)
-        {
-          if (bestCandidate._1 < finalBins(i)._1._2)
-          {
-            found = true
-            val actualBin = finalBins(i)
-            val dataBin = bRemCPs.value.filter(item => (actualBin._1._1 < item._1) && (actualBin._1._2 >= item._1))
-            //crear bin y recalcular caim
-            dataBin.cache
-            //TODO podemos ahorrarnos un filter aqui, qutando el filter del bin y dejando solo valuesLeft filter y valuesRight filter.
-            val valuesLeft = dataBin.filter(_._1 <= bestCandidate._1).values.reduce((x,y) => ((for(i <- 0 until numLabels) yield x._1(i) + y._1(i)).toArray, 0))
-            val valuesRight = dataBin.filter(_._1 > bestCandidate._1).values.reduce((x,y) => ((for(i <- 0 until numLabels) yield x._1(i) + y._1(i)).toArray, 0))
-            val caimLeft = (valuesLeft._1.max * valuesLeft._1.max) / (valuesLeft._1.sum.toDouble)
-            val caimRight = (valuesRight._1.max * valuesRight._1.max) / (valuesRight._1.sum.toDouble)
-            /*TESTING
-            println("LEFT --> Valor maximo: " + valuesLeft._1.max + ", suma de puntos: " + valuesLeft._1.sum.toDouble + ", CAIM: " + caimLeft)
-            println("RIGHT --> Valor maximo: " + valuesRight._1.max + ", suma de puntos: " + valuesRight._1.sum.toDouble + ", CAIM: " + caimRight)
-            //END TESTING*/
-            val binLeft = ((finalBins(i)._1._1 , bestCandidate._1), caimLeft )
-            val binRight = ((bestCandidate._1 , finalBins(i)._1._2), caimRight )
-            finalBins(i) = binRight
-            finalBins.insert(i, binLeft)
-            globalCaim = bestCandidate._2._2
-            
-            //TESTING
-            println("Bins nuevos")
-            var sumBins = 0.0
-            for(item <- finalBins){
-              sumBins += item._2
-              println("Bin (" + item._1._1 + "," + + item._1._2 + "), CAIM--> " + item._2)
-            }
-            println("SE INTRODUCE --> Caim definido durante mapPartitions: " + globalCaim + ", Caim recalculado ahora: " + sumBins/nTempBins)
-            //END TESTING
-          }
-          i += 1
-        }
-        if(!found) println("Bin no encontrado!")
-        nTempBins += 1.0
-        numRemainingCPs -= 1
-      }
-      else
-        exit = true
-      //TESTING
-      println("FIN DE ANADIDO DE PUNTO...")
-      println
-      println("DATOS FINALES ITERACION:")
-      print("Selected cutPoints --> ")
-      for(i <- selectedCutPoints) print(i + ", ")
-      println
-      print("final Bins --> ")
-      for(i <- finalBins) print("(" + i._1._1 + ", " + i._1._2 + "):" + i._2 + "; ")
-      println
-      println("global Caim --> " + globalCaim)
-      println("num temp Bins --> " + nTempBins)
-      println
-      //END TESTING
-    }
-    
-    //corregimos el ajuste del primer bin, poniendo bien su minValue
+			case LabeledPoint(label, dv: DenseVector) =>
+				val c = Array.fill[Long](nLabels)(0L)
+				c(bLabels2Int.value(label)) = 1L
+				for (i <- dv.values.indices) yield ((i, dv(i).toFloat), c)
+			case LabeledPoint(label, sv: SparseVector) =>
+				val c = Array.fill[Long](nLabels)(0L)
+				c(bLabels2Int.value(label)) = 1L
+				for (i <- sv.indices.indices) yield ((sv.indices(i), sv.values(i).toFloat), c)
+		})
+		
+		//los ordenamos
+		val sortedValues = getSortedDistinctValues(bclassDistrib, featureValues).persist
+		
+		//Aplicar CAIM a cada dimension
+		val bins = ArrayBuffer[(Int,(Float,Float))]()
+		for (dimension <- 0 until cols)
+		{
+			val dimensionData = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value, hlabels)}) 
+			bins ++= caimDimensionDiscretization(dimension,dimensionData)
+		}
+		bins
+	}
+	
+	def caimDimensionDiscretization(dimension:Int, dimensionData: RDD[(Float, Array[Long])]): ArrayBuffer[(Int,(Float,Float))] =
+	{
+	  dimensionData.persist
+		// Inicializar variables
+	  var globalCaim = -Double.MaxValue
+		val selectedCutPoints = ArrayBuffer[Float]()
+		// TODO check minValue fix of -1
+		selectedCutPoints += dimensionData.first._1 - 1//minimo
+		selectedCutPoints += dimensionData.keys.max //maximo
+		val finalBins = ArrayBuffer[((Float, Float), Double)] ()
+		var nFinalBins = 1
+		var fullRangeBin = ( (Float.MinValue , selectedCutPoints(1)), globalCaim)  
+		finalBins += fullRangeBin
+		
+		// Loop control variables
+		var numRemainingCPs = dimensionData.count()
+		numRemainingCPs -= 2 //minimo y maximo extraidos antes
+		var exit = false
+		
+		// Main loop
+		while(numRemainingCPs > 0 && !exit)
+		{	
+		  // Temp variables for new candidate calculus
+			var tempMaxCaim = -Double.MaxValue
+			var tempBestCandidate = 0f
+			var tempBestLeftCaim = 0.0
+			var tempBestRightCaim = 0.0
+			val nTempBins = nFinalBins + 1
+			
+			// Iterate over bins and calculate CAIM value locally
+			for(bin <- finalBins)
+			{
+				val min = bin._1._1
+				val max = bin._1._2
+				val binData = dimensionData.filter(point => (point._1 < max) && (point._1 >= min)).persist
+				val binDataPoints = binData.keys.collect
+				for(candidatePoint <- binDataPoints)
+				{
+				  //TODO: comprobar si no esta en selected cutpoints
+				  var (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint, binData)
+				  var localCaim = localLeftCaim + localRightCaim
+				  for(item <- finalBins if (item._1._1 < candidatePoint && item._1._2 >= candidatePoint)) localCaim += item._2
+				  localCaim = localCaim / nTempBins
+				  if (localCaim > tempMaxCaim)
+				  {
+				    tempMaxCaim = localCaim
+				    tempBestCandidate = candidatePoint
+				    tempBestLeftCaim = localLeftCaim
+				    tempBestRightCaim = localRightCaim
+				  }
+				}
+			}
+			
+			// Check if best CAIM is 
+			if(tempMaxCaim > globalCaim || nTempBins < nLabels)
+			{
+			  selectedCutPoints += tempBestCandidate
+      	var i = 0
+      	var found = false
+      	while (i < finalBins.length && !found)
+      	{
+      	  if (tempBestCandidate < finalBins(i)._1._2)
+      	  {
+        		found = true
+        		val actualBin = finalBins(i)
+        		
+        		val binLeft = ((finalBins(i)._1._1 , tempBestCandidate), tempBestLeftCaim )
+        		val binRight = ((tempBestCandidate , finalBins(i)._1._2), tempBestRightCaim )
+        		finalBins(i) = binRight
+        		finalBins.insert(i, binLeft)
+        		globalCaim = tempMaxCaim
+        		nFinalBins += 1
+        		numRemainingCPs -= 1
+      	  }
+      	  i += 1
+      	}
+			}
+			else if (nTempBins >= nLabels - 1)
+			  exit = true
+		}
+		// Fix maxCutpoint Fix, so it gets its true value
     finalBins(0) = ( (selectedCutPoints(0), finalBins(0)._1._2), 0 )
-    //add dimension ID to bins
+    // add dimension ID to bins
     val result = ArrayBuffer[(Int,(Float,Float))]()
     result ++= (for (bin <- finalBins) yield (dimension, bin._1))
-    //TESTING
-    print("DATOS FINALES:")
-    print("Selected cutPoints --> ")
-    for(i <- selectedCutPoints) print(i + ", ")
-    println
-    print("Result Bins --> ")
-    for(i <- finalBins) print("(" + i._1._1 + ", " + i._1._2 + "); ")
-    println
-    println("//--------------------------------------//")
-    println("//---------- END DIMENSION " + dimension + " -----------//") 
-    println("//--------------------------------------//")
-    println
-    //END TESTING
+    
     result
-  }
-  
-  //candidatePoint = (value, (ClassHistogram, CAIM))
-  def computeCAIM(candidatePoint:(Float, (Array[Long],Double)), dataBc: Broadcast[RDD[(Float, (Array[Long],Double))]]): (Float, (Array[Long],Double)) =
-  {
-    val numLabels = nLabels
-    //TODO arreglar esto, pequeño fix que suple el no poder modificar CAIM a -1 --> if(candidatePoint._2._2 < 0) 
-    if (selectedCutPoints.exists(_ == candidatePoint._1))
-    {
-      //candidatePoint
-      (candidatePoint._1,(candidatePoint._2._1, -1))
-    }
-    else //Caso 2 = cutPoint es candidato
-    {
-      //filtrar puntos de interes, dividir datos en dos, y obtener suma de histogramas
-      //TODO podemos ahorrarnos un filter aqui, qutando el filter del bin y dejando solo valuesLeft filter y valuesRight filter. 
-      val actualBin = finalBins.filter(bin => (bin._1._1 < candidatePoint._1) && (bin._1._2 >= candidatePoint._1))(0)
-      val dataBin = dataBc.value.filter(item => (actualBin._1._1 < item._1) && (actualBin._1._2 >= item._1))
-      dataBin.cache
-      val valuesLeft = dataBin.filter(_._1 <= candidatePoint._1).values.reduce((x,y) => ((for(i <- 0 until numLabels) yield x._1(i) + y._1(i)).toArray, 0))
-      val valuesRight = dataBin.filter(_._1 > candidatePoint._1).values.reduce((x,y) => ((for(i <- 0 until numLabels) yield x._1(i) + y._1(i)).toArray, 0))
-      
-      //calcular CAIM
-      var caimBins = ( (valuesLeft._1.max * valuesLeft._1.max) / valuesLeft._1.sum.toDouble) + ((valuesRight._1.max * valuesRight._1.max) / valuesRight._1.sum.toDouble )
-      for(item <- finalBins if (item._1._1 != actualBin._1._1)) caimBins += item._2
-      
-      //return result
-      (candidatePoint._1,(candidatePoint._2._1, caimBins/nTempBins))
-    }
-  }
-  
-  //genera (Dimension, Valor), [countlabelClase1, countlabelClase2, ... ]
+	}
+	
+	def computeCAIM(candidatePoint:Float, binData: RDD[(Float, Array[Long])]): (Double,Double) =
+	{
+	  val valuesLeft = binData.filter(_._1 <= candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
+    val valuesRight = binData.filter(_._1 > candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
+    val localLeftCaim = (valuesLeft.max * valuesLeft.max) / valuesLeft.sum.toDouble 
+    val localRightCaim = (valuesRight.max * valuesRight.max) / valuesRight.sum.toDouble
+	  
+		(localLeftCaim, localRightCaim)
+	}
+	
+	
+	  //genera (Dimension, Valor), [countlabelClase1, countlabelClase2, ... ]
   def getSortedDistinctValues(
       bclassDistrib: Broadcast[Map[Int, Long]],
       featureValues: RDD[((Int, Float), Array[Long])]): RDD[((Int, Float), Array[Long])] = {
@@ -302,6 +170,7 @@ object CAIM {
     result
   }
   
+  
   def addZerosIfNeeded(nonZeros: RDD[((Int, Float), Array[Long])],
       bclassDistrib: Broadcast[Map[Int, Long]]): RDD[((Int, Float), Array[Long])] = {
     nonZeros
@@ -312,5 +181,5 @@ object CAIM {
         ((k, 0.0F), v2.toArray)
       }.filter { case (_, v) => v.sum > 0 }
   }
-  
+
 }

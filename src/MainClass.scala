@@ -37,7 +37,8 @@ object MainClass {
     println("field Delimiter: " + delimiter)
     println("Primera linea del intermediate --> ")
     text.foreach(println(_))
-    val data:RDD[LabeledPoint] = file.map(line => line.split(delimiter)).map(line => new LabeledPoint(line(line.length -1).toDouble, Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
+    val data:RDD[LabeledPoint] = file.map(line => line.split(delimiter)).map(line => new LabeledPoint(line(line.length -1).toDouble, 
+        Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
     
     println
     println("INICIANDO CAIM...")
@@ -72,29 +73,29 @@ object MainClass {
     if (found == false)
 			throw new Exception("Missing -FILE_INPUT");
     
-    found = false
-    for (i <- 0 until total if !found)
-    {
-      if (args(i).equals("-FILE_CP_OUTPUT"))
-      {
-        FILE_CP_OUTPUT = args(i+1)
-        found = true
-      }
-    }
-    if (found == false)
-			throw new Exception("Missing -FILE_CP_OUTPUT");
+//    found = false
+//    for (i <- 0 until total if !found)
+//    {
+//      if (args(i).equals("-FILE_CP_OUTPUT"))
+//      {
+//        FILE_CP_OUTPUT = args(i+1)
+//        found = true
+//      }
+//    }
+//    if (found == false)
+//			throw new Exception("Missing -FILE_CP_OUTPUT");
     
-    found = false
-    for (i <- 0 until total if !found)
-    {
-      if (args(i).equals("-FILE_DATA_OUTPUT"))
-      {
-        FILE_DATA_OUTPUT = args(i+1)
-        found = true
-      }
-    }
-    if (found == false)
-			throw new Exception("Missing -FILE_DATA_OUTPUT");
+//    found = false
+//    for (i <- 0 until total if !found)
+//    {
+//      if (args(i).equals("-FILE_DATA_OUTPUT"))
+//      {
+//        FILE_DATA_OUTPUT = args(i+1)
+//        found = true
+//      }
+//    }
+//    if (found == false)
+//			throw new Exception("Missing -FILE_DATA_OUTPUT");
     
     found = false
     for (i <- 0 until total if !found)
