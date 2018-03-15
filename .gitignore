@@ -10,3 +10,7 @@ results/*
 #config
 .settings/*
 pom.xml
+
+#others
+META-INF/MANIFEST.MF
+build.properties
