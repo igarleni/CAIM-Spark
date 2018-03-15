@@ -7,7 +7,7 @@ import org.apache.spark.broadcast.Broadcast
 import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 
-object CAIM {
+object CAIMmulti {
 	var nLabels = 0
 	var sc: SparkContext = null
 	
@@ -81,19 +81,20 @@ object CAIM {
 			{
 				val min = bin._1._1
 				val max = bin._1._2
-				val binData = dimensionData.filter(point => (point._1 <= max) && (point._1 > min)).persist
-				val binDataPoints = binData.keys.collect
-				for(candidatePoint <- binDataPoints)
+				val binData = dimensionData.filter(point => (point._1 <= max) && (point._1 > min))
+				val localBinData = binData.collect.toMap
+				val bBinData = sc.broadcast(localBinData)
+				for(candidatePoint <- localBinData)
 				{
 				  //TODO: comprobar si no esta en selected cutpoints
-				  val (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint, binData)
+				  val (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint._1, bBinData)
 				  var localCaim = localLeftCaim + localRightCaim
-				  for(item <- finalBins if (candidatePoint <= item._1._1  || candidatePoint > item._1._2 )) localCaim += item._2
+				  for(item <- finalBins if (candidatePoint._1 <= item._1._1  || candidatePoint._1 > item._1._2 )) localCaim += item._2
 				  localCaim = localCaim / nTempBins
 				  if (localCaim > tempMaxCaim)
 				  {
 				    tempMaxCaim = localCaim
-				    tempBestCandidate = candidatePoint
+				    tempBestCandidate = candidatePoint._1
 				    tempBestLeftCaim = localLeftCaim
 				    tempBestRightCaim = localRightCaim
 				  }
@@ -136,10 +137,10 @@ object CAIM {
     result
 	}
 	
-	def computeCAIM(candidatePoint:Float, binData: RDD[(Float, Array[Long])]): (Double,Double) =
+	def computeCAIM(candidatePoint:Float, bBinData: Broadcast[Map[Float, Array[Long]]]): (Double,Double) =
 	{
-	  val valuesLeft = binData.filter(_._1 <= candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
-    val valuesRight = binData.filter(_._1 > candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
+	  val valuesLeft = bBinData.value.filter(_._1 <= candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
+    val valuesRight = bBinData.value.filter(_._1 > candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
     val localLeftCaim = (valuesLeft.max * valuesLeft.max) / valuesLeft.sum.toDouble 
     val localRightCaim = (valuesRight.max * valuesRight.max) / valuesRight.sum.toDouble
 	  
