@@ -85,17 +85,19 @@ object CAIM {
 				val binDataPoints = binData.keys.collect
 				for(candidatePoint <- binDataPoints)
 				{
-				  //TODO: comprobar si no esta en selected cutpoints
-				  val (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint, binData)
-				  var localCaim = localLeftCaim + localRightCaim
-				  for(item <- finalBins if (candidatePoint <= item._1._1  || candidatePoint > item._1._2 )) localCaim += item._2
-				  localCaim = localCaim / nTempBins
-				  if (localCaim > tempMaxCaim)
+				  if(max != candidatePoint)
 				  {
-				    tempMaxCaim = localCaim
-				    tempBestCandidate = candidatePoint
-				    tempBestLeftCaim = localLeftCaim
-				    tempBestRightCaim = localRightCaim
+  				  val (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint, binData)
+  				  var localCaim = localLeftCaim + localRightCaim
+  				  for(item <- finalBins if (candidatePoint <= item._1._1  || candidatePoint > item._1._2 )) localCaim += item._2
+  				  localCaim = localCaim / nTempBins
+  				  if (localCaim > tempMaxCaim)
+  				  {
+  				    tempMaxCaim = localCaim
+  				    tempBestCandidate = candidatePoint
+  				    tempBestLeftCaim = localLeftCaim
+  				    tempBestRightCaim = localRightCaim
+  				  }
 				  }
 				}
 			}
@@ -136,7 +138,7 @@ object CAIM {
     result
 	}
 	
-	def computeCAIM(candidatePoint:Float, binData: RDD[(Float, Array[Long])]): (Double,Double) =
+	def computeCAIM(candidatePoint:Float, binData: RDD[(Float, Array[Long])]): (Double, Double) =
 	{
 	  val valuesLeft = binData.filter(_._1 <= candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
     val valuesRight = binData.filter(_._1 > candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))

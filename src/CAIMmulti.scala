@@ -84,21 +84,17 @@ object CAIMmulti {
 				val binData = dimensionData.filter(point => (point._1 <= max) && (point._1 > min))
 				val localBinData = binData.collect.toMap
 				val bBinData = sc.broadcast(localBinData)
-				for(candidatePoint <- localBinData)
-				{
-				  //TODO: comprobar si no esta en selected cutpoints
-				  val (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint._1, bBinData)
-				  var localCaim = localLeftCaim + localRightCaim
-				  for(item <- finalBins if (candidatePoint._1 <= item._1._1  || candidatePoint._1 > item._1._2 )) localCaim += item._2
-				  localCaim = localCaim / nTempBins
-				  if (localCaim > tempMaxCaim)
-				  {
-				    tempMaxCaim = localCaim
-				    tempBestCandidate = candidatePoint._1
-				    tempBestLeftCaim = localLeftCaim
-				    tempBestRightCaim = localRightCaim
-				  }
-				}
+				val bFinalBins = sc.broadcast(finalBins)
+				val binCaims = binData.mapPartitions({ iter: Iterator[(Float, Array[Long])] => for (point <- iter) yield computeCAIM(point._1, bBinData, max, bFinalBins) }, true)
+				val bestCaim = binCaims.max()(new Ordering[Tuple2[Float, Double]]() {
+          override def compare(x: (Float, Double), y: (Float, Double)): Int = 
+          Ordering[Double].compare(x._2, y._2)
+        })
+        if (bestCaim._2 > tempMaxCaim)
+			  {
+			    tempMaxCaim = bestCaim._2
+			    tempBestCandidate = bestCaim._1
+			  }
 			}
 			
 			// Check if best CAIM is 
@@ -107,6 +103,7 @@ object CAIMmulti {
 			  selectedCutPoints += tempBestCandidate
       	var i = 0
       	var found = false
+      	// TODO: calculate new CAIM bins
       	while (i < finalBins.length && !found)
       	{
       	  if (tempBestCandidate < finalBins(i)._1._2)
@@ -137,14 +134,22 @@ object CAIMmulti {
     result
 	}
 	
-	def computeCAIM(candidatePoint:Float, bBinData: Broadcast[Map[Float, Array[Long]]]): (Double,Double) =
+	def computeCAIM(candidatePoint:Float, bBinData: Broadcast[scala.collection.immutable.Map[Float, Array[Long]]], max: Float,
+	    bFinalBins: Broadcast[ArrayBuffer[((Float, Float), Double)]]): (Float, Double) =
 	{
-	  val valuesLeft = bBinData.value.filter(_._1 <= candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
-    val valuesRight = bBinData.value.filter(_._1 > candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
-    val localLeftCaim = (valuesLeft.max * valuesLeft.max) / valuesLeft.sum.toDouble 
-    val localRightCaim = (valuesRight.max * valuesRight.max) / valuesRight.sum.toDouble
-	  
-		(localLeftCaim, localRightCaim)
+	  var caimValue = 0.0
+	  if(max != candidatePoint)
+	  {
+	    val nTempBins = bFinalBins.value.length + 1
+	    val valuesLeft = bBinData.value.filter(_._1 <= candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
+      val valuesRight = bBinData.value.filter(_._1 > candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
+      val localLeftCaim = (valuesLeft.max * valuesLeft.max) / valuesLeft.sum.toDouble 
+      val localRightCaim = (valuesRight.max * valuesRight.max) / valuesRight.sum.toDouble
+		  var localCaim = localLeftCaim + localRightCaim
+		  for(item <- bFinalBins.value if (candidatePoint <= item._1._1  || candidatePoint > item._1._2 )) localCaim += item._2
+		  caimValue = localCaim / nTempBins
+	  }
+		(candidatePoint, caimValue)
 	}
 	
 	
