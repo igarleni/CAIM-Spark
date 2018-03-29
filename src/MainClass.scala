@@ -27,22 +27,24 @@ object MainClass {
     */
     readInputString(args)
     
-    //leer datos y transformarlos
+    //leer datos y transformarlos a LabeledPoint
     println("LEYENDO FICHERO...")
-    val file = sc.textFile(FILE_INPUT)
-    println("Primera linea del CSV --> " + file.first)
     val delimiter = FIELD_DELIMITER
-    val intermediate = file.map(_.split(delimiter))
-    val text = intermediate.first
-    println("field Delimiter: " + delimiter)
-    println("Primera linea del intermediate --> ")
-    text.foreach(println(_))
-    val data:RDD[LabeledPoint] = file.map(line => line.split(delimiter)).map(line => new LabeledPoint(line(line.length -1).toDouble, 
-        Vectors.dense(line.slice(0,(line.length -1)).map(_.toDouble) ) ) )
+    val file = sc.textFile(FILE_INPUT).map(line => line.split(delimiter))
+    val data = file.map(row => 
+      new LabeledPoint(
+            row.last.toDouble, 
+            Vectors.dense(row.take(row.length - 1).map(str => str.toDouble))
+      )
+    )
     
+    val punto1 = data.first
+    println("Primer punto del RDD[LabeledPoint]: ")
+    println(" -Caracteristicas = " + punto1.features)
+    println(" -Label = " + punto1.label)
     println
+    
     println("INICIANDO CAIM...")
-    //Aplicar CAIM y obtener los bins
     val result: ArrayBuffer[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
     
     //TESTING

@@ -17,6 +17,7 @@ object CAIM {
 		//obtenemos los labels de la variable clase
 		val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
 		nLabels = labels2Int.size
+		val nLabelsVal = nLabels
 		//creamos un map de los index labels y los cuenta, obteniendo el numero de apariciones
 		//de cada distinct
 		val bLabels2Int = sc.broadcast(labels2Int)
@@ -25,11 +26,11 @@ object CAIM {
 		val featureValues =
         data.flatMap({
 			case LabeledPoint(label, dv: DenseVector) =>
-				val c = Array.fill[Long](nLabels)(0L)
+				val c = Array.fill[Long](nLabelsVal)(0L)
 				c(bLabels2Int.value(label)) = 1L
 				for (i <- dv.values.indices) yield ((i, dv(i).toFloat), c)
 			case LabeledPoint(label, sv: SparseVector) =>
-				val c = Array.fill[Long](nLabels)(0L)
+				val c = Array.fill[Long](nLabelsVal)(0L)
 				c(bLabels2Int.value(label)) = 1L
 				for (i <- sv.indices.indices) yield ((sv.indices(i), sv.values(i).toFloat), c)
 		})
