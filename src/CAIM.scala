@@ -82,19 +82,18 @@ object CAIM {
 			{
 				val min = bin._1._1
 				val max = bin._1._2
-				val binData = dimensionData.filter(point => (point._1 <= max) && (point._1 > min)).persist
+				val binData = dimensionData.filter(point => ((min < point._1) && (point._1 <= max)) ).persist
 				val binDataPoints = binData.keys.collect
+				val externalCaim = finalBins.map(x => (x._2)).sum - bin._2
 				for(candidatePoint <- binDataPoints)
 				{
-				  if(max != candidatePoint)
+				  if(!selectedCutPoints.exists(_ == candidatePoint))
 				  {
   				  val (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint, binData)
-  				  var localCaim = localLeftCaim + localRightCaim
-  				  for(item <- finalBins if (candidatePoint <= item._1._1  || candidatePoint > item._1._2 )) localCaim += item._2
-  				  localCaim = localCaim / nTempBins
-  				  if (localCaim > tempMaxCaim)
+  				  val pointCaim = (localLeftCaim + localRightCaim + externalCaim) / nTempBins
+  				  if (pointCaim > tempMaxCaim)
   				  {
-  				    tempMaxCaim = localCaim
+  				    tempMaxCaim = pointCaim
   				    tempBestCandidate = candidatePoint
   				    tempBestLeftCaim = localLeftCaim
   				    tempBestRightCaim = localRightCaim
@@ -104,7 +103,7 @@ object CAIM {
 			}
 			
 			// Check if best CAIM is 
-			if(tempMaxCaim > globalCaim || nTempBins < nLabels)
+			if(tempMaxCaim > globalCaim)
 			{
 			  selectedCutPoints += tempBestCandidate
       	var i = 0
@@ -127,7 +126,7 @@ object CAIM {
       	  i += 1
       	}
 			}
-			else if (nTempBins >= nLabels - 1)
+			if (nFinalBins >= nLabels)
 			  exit = true
 		}
 		// Fix maxCutpoint Fix, so it gets its true value

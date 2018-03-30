@@ -38,12 +38,6 @@ object MainClass {
       )
     )
     
-    val punto1 = data.first
-    println("Primer punto del RDD[LabeledPoint]: ")
-    println(" -Caracteristicas = " + punto1.features)
-    println(" -Label = " + punto1.label)
-    println
-    
     println("INICIANDO CAIM...")
     val result: ArrayBuffer[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
     
