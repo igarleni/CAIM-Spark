@@ -8,7 +8,6 @@ import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 
 object CAIM {
-	var nLabels = 0
 	var sc: SparkContext = null
 	
 	def discretizeData(data: RDD[LabeledPoint], sPc:SparkContext, cols:Int): ArrayBuffer[(Int,(Float,Float))] =
@@ -16,8 +15,7 @@ object CAIM {
 		sc = sPc
 		//obtenemos los labels de la variable clase
 		val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
-		nLabels = labels2Int.size
-		val nLabelsVal = nLabels
+		val nLabels = labels2Int.size
 		//creamos un map de los index labels y los cuenta, obteniendo el numero de apariciones
 		//de cada distinct
 		val bLabels2Int = sc.broadcast(labels2Int)
@@ -26,11 +24,11 @@ object CAIM {
 		val featureValues =
         data.flatMap({
 			case LabeledPoint(label, dv: DenseVector) =>
-				val c = Array.fill[Long](nLabelsVal)(0L)
+				val c = Array.fill[Long](nLabels)(0L)
 				c(bLabels2Int.value(label)) = 1L
 				for (i <- dv.values.indices) yield ((i, dv(i).toFloat), c)
 			case LabeledPoint(label, sv: SparseVector) =>
-				val c = Array.fill[Long](nLabelsVal)(0L)
+				val c = Array.fill[Long](nLabels)(0L)
 				c(bLabels2Int.value(label)) = 1L
 				for (i <- sv.indices.indices) yield ((sv.indices(i), sv.values(i).toFloat), c)
 		})
@@ -43,12 +41,12 @@ object CAIM {
 		for (dimension <- 0 until cols)
 		{
 			val dimensionData = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value, hlabels)}) 
-			bins ++= caimDimensionDiscretization(dimension,dimensionData)
+			bins ++= caimDimensionDiscretization(dimension,dimensionData, nLabels)
 		}
 		bins
 	}
 	
-	def caimDimensionDiscretization(dimension:Int, dimensionData: RDD[(Float, Array[Long])]): ArrayBuffer[(Int,(Float,Float))] =
+	def caimDimensionDiscretization(dimension:Int, dimensionData: RDD[(Float, Array[Long])], nLabels: Int): ArrayBuffer[(Int,(Float,Float))] =
 	{
 	  dimensionData.persist
 	  
@@ -89,7 +87,7 @@ object CAIM {
 				{
 				  if(!selectedCutPoints.exists(_ == candidatePoint))
 				  {
-  				  val (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint, binData)
+  				  val (localLeftCaim, localRightCaim) = computeCAIM(candidatePoint, binData, nLabels)
   				  val pointCaim = (localLeftCaim + localRightCaim + externalCaim) / nTempBins
   				  if (pointCaim > tempMaxCaim)
   				  {
@@ -138,12 +136,14 @@ object CAIM {
     result
 	}
 	
-	def computeCAIM(candidatePoint:Float, binData: RDD[(Float, Array[Long])]): (Double, Double) =
+	def computeCAIM(candidatePoint:Float, binData: RDD[(Float, Array[Long])], nLabels: Int): (Double, Double) =
 	{
 	  val valuesLeft = binData.filter(_._1 <= candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
     val valuesRight = binData.filter(_._1 > candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
-    val localLeftCaim = (valuesLeft.max * valuesLeft.max) / valuesLeft.sum.toDouble 
-    val localRightCaim = (valuesRight.max * valuesRight.max) / valuesRight.sum.toDouble
+    val maxLeft = valuesLeft.max
+    val localLeftCaim = (maxLeft * maxLeft) / valuesLeft.sum.toDouble 
+    val maxRight = valuesRight.max
+    val localRightCaim = (maxRight * maxRight) / valuesRight.sum.toDouble
 	  
 		(localLeftCaim, localRightCaim)
 	}

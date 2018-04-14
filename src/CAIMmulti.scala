@@ -8,7 +8,6 @@ import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer
 
 object CAIMmulti {
-	var nLabels = 0
 	var sc: SparkContext = null
 	
 	def discretizeData(data: RDD[LabeledPoint], sPc:SparkContext, cols:Int): ArrayBuffer[(Int,(Float,Float))] =
@@ -16,7 +15,7 @@ object CAIMmulti {
 		sc = sPc
 		//obtenemos los labels de la variable clase
 		val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
-		nLabels = labels2Int.size
+		val nLabels = labels2Int.size
 		//creamos un map de los index labels y los cuenta, obteniendo el numero de apariciones
 		//de cada distinct
 		val bLabels2Int = sc.broadcast(labels2Int)
@@ -41,25 +40,25 @@ object CAIMmulti {
 		val bins = ArrayBuffer[(Int,(Float,Float))]()
 		for (dimension <- 0 until cols)
 		{
-			val dimensionData = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value, hlabels)}) 
-			bins ++= caimDimensionDiscretization(dimension,dimensionData)
+			val dimensionData = sortedValues.filter(_._1._1 == dimension).map({case ((dim,value),hlabels) => (value, hlabels)}).zipWithIndex().map(_.swap)
+			bins ++= caimDimensionDiscretization(dimension,dimensionData, nLabels)
 		}
 		bins
 	}
 	
-	def caimDimensionDiscretization(dimension:Int, dimensionData: RDD[(Float, Array[Long])]): ArrayBuffer[(Int,(Float,Float))] =
+	def caimDimensionDiscretization(dimension:Int, dimensionData: RDD[(Long,(Float, Array[Long]))], nLabels: Int): ArrayBuffer[(Int,(Float,Float))] =
 	{
 	  dimensionData.persist
 	  
 		// Inicializar variables
 	  var globalCaim = -Double.MaxValue
-		val selectedCutPoints = ArrayBuffer[Float]()
-		selectedCutPoints += dimensionData.first._1 //minimo
+		val selectedCutPoints = ArrayBuffer[Long]()
+		selectedCutPoints += dimensionData.first._1 // minimo
 		selectedCutPoints += dimensionData.keys.max //maximo
-		val finalBins = ArrayBuffer[((Float, Float), Double)] ()
+		val finalIDBins = ArrayBuffer[((Long, Long), Double)] ()
 		var nFinalBins = 1
 		val fullRangeBin = ( (selectedCutPoints(0) - 1 , selectedCutPoints(1)), globalCaim)  // -1 para englobar todo
-		finalBins += fullRangeBin
+		finalIDBins += fullRangeBin
 		
 		// Loop control variables
 		var numRemainingCPs = dimensionData.count()
@@ -77,18 +76,28 @@ object CAIMmulti {
 			val nTempBins = nFinalBins + 1
 			
 			// Iterate over bins and calculate CAIM value locally
-			for(bin <- finalBins)
+			for(bin <- finalIDBins)
 			{
 				val min = bin._1._1
 				val max = bin._1._2
-				val binData = dimensionData.filter(point => (point._1 <= max) && (point._1 > min))
-				val localBinData = binData.collect.toMap
-				val bBinData = sc.broadcast(localBinData)
-				val bFinalBins = sc.broadcast(finalBins)
-				val binCaims = binData.mapPartitions({ iter: Iterator[(Float, Array[Long])] => for (point <- iter) yield computeCAIM(point._1, bBinData, max, bFinalBins) }, true)
-				val bestCaim = binCaims.max()(new Ordering[Tuple2[Float, Double]]() {
-          override def compare(x: (Float, Double), y: (Float, Double)): Int = 
-          Ordering[Double].compare(x._2, y._2)
+				val binData = dimensionData.filter(point => (point._1 <= max) && (point._1 > min)).map(item => (item._1, item._2._2))
+				val pointInfluences = binData.flatMap(point => {
+				  val caimLeft = for(value <- min + 1 to point._1) yield (point._1, (Array.fill[Long](nLabels)(0L),point._2))
+				  val caimRight = for(value <- point._1 + 1 to max) yield (point._1, (point._2,Array.fill[Long](nLabels)(0L)))
+				  
+				  val caimRightArray = caimRight.toArray
+				  val caimLeftArray = caimLeft.toArray
+				  caimRightArray ++ caimLeftArray
+				})
+				val combiner = (x:Tuple2[Array[Long],Array[Long]] ,y:Tuple2[Array[Long],Array[Long]]) => 
+				  ( ((x._1, y._1).zipped.map(_+_), (x._2, y._2).zipped.map(_+_)) )
+				//TODO include lateral bins on caimCalculator
+				val caimCalculator = (bins: (Array[Long], Array[Long])) => (((bins._1.max / bins._1.sum),(bins._1.max / bins._1.sum)))
+				val pointsPartialCaims = pointInfluences.reduceByKey(combiner).map((point => (point_.1, caimCalculator(point._2))))
+				
+				val bestCaim = pointsPartialCaims.max()(new Ordering[Tuple2[Long, Tuple2[Double,Double]]]() {
+          override def compare(x: (Long, (Double, Double)), y: (Long, (Double, Double))): Int = 
+          Ordering[Double].compare(x._2._1, y._2._2)
         })
         if (bestCaim._2 > tempMaxCaim)
 			  {
@@ -127,29 +136,12 @@ object CAIMmulti {
 		}
 		// Fix maxCutpoint Fix, so it gets its true value
     finalBins(0) = ( (selectedCutPoints(0), finalBins(0)._1._2), 0 )
+    //TODO Transform ID values to real values
     // add dimension ID to bins
     val result = ArrayBuffer[(Int,(Float,Float))]()
     result ++= (for (bin <- finalBins) yield (dimension, bin._1))
     
     result
-	}
-	
-	def computeCAIM(candidatePoint:Float, bBinData: Broadcast[scala.collection.immutable.Map[Float, Array[Long]]], max: Float,
-	    bFinalBins: Broadcast[ArrayBuffer[((Float, Float), Double)]]): (Float, Double) =
-	{
-	  var caimValue = 0.0
-	  if(max != candidatePoint)
-	  {
-	    val nTempBins = bFinalBins.value.length + 1
-	    val valuesLeft = bBinData.value.filter(_._1 <= candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
-      val valuesRight = bBinData.value.filter(_._1 > candidatePoint).values.reduce((x,y) => ((for(i <- 0 until nLabels) yield x(i) + y(i)).toArray))
-      val localLeftCaim = (valuesLeft.max * valuesLeft.max) / valuesLeft.sum.toDouble 
-      val localRightCaim = (valuesRight.max * valuesRight.max) / valuesRight.sum.toDouble
-		  var localCaim = localLeftCaim + localRightCaim
-		  for(item <- bFinalBins.value if (candidatePoint <= item._1._1  || candidatePoint > item._1._2 )) localCaim += item._2
-		  caimValue = localCaim / nTempBins
-	  }
-		(candidatePoint, caimValue)
 	}
 	
 	

@@ -38,19 +38,24 @@ object MainClass {
       )
     )
     
+    println
     println("INICIANDO CAIM...")
-    val result: ArrayBuffer[(Int,(Float,Float))] = CAIM.discretizeData(data,sc, MEASURE_COLS)
+    val result: ArrayBuffer[(Int,(Float,Float))] = CAIMmulti.discretizeData(data,sc, MEASURE_COLS)
     
-    //TESTING
     println
     println("CAIM FINALIZADO...")
+    
+    //BEGIN TESTING
     println("RESULTADOS:")
     for(bin <- result) println("Dimension " + bin._1 + ": (" + bin._2._1 + ", " + bin._2._2 + ")")
     //END TESTING
     
     //transformar los datos
     
+    
     //guardar datos nuevos
+    
+    
   }
   
     def readInputString(args:Array[String]): Unit = 
