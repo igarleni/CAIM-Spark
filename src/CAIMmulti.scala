@@ -70,9 +70,7 @@ object CAIMmulti {
 		{	
 		  // Temp variables for new candidate calculus
 			var tempMaxCaim = -Double.MaxValue
-			var tempBestCandidate = 0f
-			var tempBestLeftCaim = 0.0
-			var tempBestRightCaim = 0.0
+			var tempBestCandidate:Tuple2[Long,Tuple2[Double,Double]] = null
 			val nTempBins = nFinalBins + 1
 			
 			// Iterate over bins and calculate CAIM value locally
@@ -94,36 +92,41 @@ object CAIMmulti {
 				val caimCalculator = (bins: (Array[Long], Array[Long])) => (((bins._1.max / bins._1.sum.toDouble),(bins._1.max / bins._1.sum.toDouble)))
 				val pointsPartialCaims = pointInfluences.reduceByKey(combiner).map((point => (point._1, caimCalculator(point._2._1,point._2._2))))
 				
-				//TODO include lateral bins on bestCaim
-				val bestCaim = pointsPartialCaims.max()(new Ordering[Tuple2[Long, Tuple2[Double,Double]]]() {
+				val partialCaim = globalCaim - bin._2
+				val getCaim = (x:Tuple2[Long,Tuple2[Double,Double]]) => x._2._1 + x._2._2 + partialCaim / nTempBins
+				val bestCaimPoint = pointsPartialCaims.max()(new Ordering[Tuple2[Long, Tuple2[Double,Double]]]() {
           override def compare(x: (Long, (Double, Double)), y: (Long, (Double, Double))): Int = 
-          Ordering[Double].compare(x._2._1, y._2._2)
+          {
+            val xCaim = getCaim(x)
+            val yCaim = getCaim(y)
+        		Ordering[Double].compare(xCaim, yCaim)
+          }
         })
-        if (bestCaim._2 > tempMaxCaim)
+        val bestCaim = getCaim(bestCaimPoint)
+        if (bestCaim > tempMaxCaim)
 			  {
-			    tempMaxCaim = bestCaim._2
-			    tempBestCandidate = bestCaim._1
+			    tempMaxCaim = bestCaim
+			    tempBestCandidate = bestCaimPoint
 			  }
 			}
 			
 			// Check if best CAIM is 
 			if(tempMaxCaim > globalCaim || nTempBins < nLabels)
 			{
-			  selectedCutPoints += tempBestCandidate
+			  selectedCutPoints += tempBestCandidate._1
       	var i = 0
       	var found = false
-      	// TODO: calculate new CAIM bins
-      	while (i < finalBins.length && !found)
+      	while (i < finalIDBins.length && !found)
       	{
-      	  if (tempBestCandidate < finalBins(i)._1._2)
+      	  if (tempBestCandidate._1 < finalIDBins(i)._1._2)
       	  {
         		found = true
-        		val actualBin = finalBins(i)
+        		val actualBin = finalIDBins(i)
         		
-        		val binLeft = ((finalBins(i)._1._1 , tempBestCandidate), tempBestLeftCaim )
-        		val binRight = ((tempBestCandidate , finalBins(i)._1._2), tempBestRightCaim )
-        		finalBins(i) = binRight
-        		finalBins.insert(i, binLeft)
+        		val binLeft = ((finalIDBins(i)._1._1 , tempBestCandidate._1), tempBestCandidate._2._1 )
+        		val binRight = ((tempBestCandidate._1 , finalIDBins(i)._1._2), tempBestCandidate._2._2 )
+        		finalIDBins(i) = binRight
+        		finalIDBins.insert(i, binLeft)
         		globalCaim = tempMaxCaim
         		nFinalBins += 1
         		numRemainingCPs -= 1
@@ -135,12 +138,11 @@ object CAIMmulti {
 			  exit = true
 		}
 		// Fix maxCutpoint Fix, so it gets its true value
-    finalBins(0) = ( (selectedCutPoints(0), finalBins(0)._1._2), 0 )
-    //TODO Transform ID values to real values
-    // add dimension ID to bins
+    finalIDBins(0) = ( (selectedCutPoints(0), finalIDBins(0)._1._2), 0 )
+    		//TODO Transform ID values to real values
+    		// add dimension ID to bins
     val result = ArrayBuffer[(Int,(Float,Float))]()
-    result ++= (for (bin <- finalBins) yield (dimension, bin._1))
-    
+    for (bin <- finalIDBins) result += (dimension, bin._1)
     result
 	}
 
