@@ -91,10 +91,10 @@ object CAIMmulti {
 				})
 				val combiner = (x:Tuple2[Array[Long],Array[Long]] ,y:Tuple2[Array[Long],Array[Long]]) => 
 				  ( ((x._1, y._1).zipped.map(_+_), (x._2, y._2).zipped.map(_+_)) )
-				//TODO include lateral bins on caimCalculator
 				val caimCalculator = (bins: (Array[Long], Array[Long])) => (((bins._1.max / bins._1.sum.toDouble),(bins._1.max / bins._1.sum.toDouble)))
 				val pointsPartialCaims = pointInfluences.reduceByKey(combiner).map((point => (point._1, caimCalculator(point._2._1,point._2._2))))
 				
+				//TODO include lateral bins on bestCaim
 				val bestCaim = pointsPartialCaims.max()(new Ordering[Tuple2[Long, Tuple2[Double,Double]]]() {
           override def compare(x: (Long, (Double, Double)), y: (Long, (Double, Double))): Int = 
           Ordering[Double].compare(x._2._1, y._2._2)
