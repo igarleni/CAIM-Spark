@@ -2,113 +2,93 @@ import org.apache.spark.SparkContext
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd._
 import org.apache.spark.mllib.regression.LabeledPoint
+import org.apache.spark.mllib.linalg.DenseVector
+import org.apache.spark.mllib.linalg.SparseVector
 import org.apache.spark.mllib.linalg.{Vector, Vectors}
-import scala.collection.mutable.ArrayBuffer
+import java.io._
 
 object MainClass {
-  var FILE_INPUT:String = null
-  var FILE_CP_OUTPUT:String = null
-  var FILE_DATA_OUTPUT:String = null
-  var MEASURE_COLS:Int = 0
-  var FIELD_DELIMITER:Char = ';'
   
   def main(args:Array[String]): Unit = 
   {
+    val sc = generateSparkContext()
+    val (delimiter, inputFile, outputFile, cutsOutputFile, nColumns) = 
+      readInputString(args)
+    val rawData = sc.textFile(inputFile)
+    val data = transformToLabeledPoint(rawData, delimiter)
     
+    // val (outputData, cutPoints) = CAIM.discretizeAllVariables(data, sc, nColumns)
+    
+    saveLabeledPoint(data, outputFile, delimiter)
+    // saveCutPoints(cutPoints, cutsOutputFile)
+  }
+  
+  
+  private def saveLabeledPoint(data: RDD[LabeledPoint], outputFile: String,
+      delimiter: String) =
+  {
+    val stringRDD = data.map(point => 
+      point.features.toArray.mkString(delimiter)
+      + delimiter + point.label.toString)
+    stringRDD.saveAsTextFile(outputFile)
+  }
+  
+    
+  private def saveCutPoints(cutPoints: Array[(Int, Array[Float])],
+      cutsOutputFile: String) = 
+  {
+    val printWriter = new PrintWriter(new File(cutsOutputFile))
+    cutPoints.foreach(variable => 
+      printWriter.write("Variable " + variable._1 +
+          ", CutPoints = " + variable._2.mkString(", ")))
+  }
+  
+  
+  private def generateSparkContext(): SparkContext =
+  {
     val conf = new SparkConf()
     conf.set("spark.cores.max", "20")
     conf.set("spark.executor.memory", "6g")
     conf.set("spark.kryoserializer.buffer.max", "512")
     conf.setAppName("CAIMdiscretization")
-    val sc = new SparkContext(conf)
-    /*
-    val conf = new SparkConf().setAppName("CAIMdiscretization").setMaster("local")
-    val sc = new SparkContext(conf)
-    */
-    readInputString(args)
     
-    //leer datos y transformarlos a LabeledPoint
-    println("LEYENDO FICHERO...")
-    val delimiter = FIELD_DELIMITER
-    val file = sc.textFile(FILE_INPUT).map(line => line.split(delimiter))
-    val data = file.map(row => 
+    return (new SparkContext(conf))
+  }
+  
+  
+  private def transformToLabeledPoint(rawData: RDD[String], delimiter: String):
+    RDD[LabeledPoint] =
+  {
+    val splittedData = rawData.map(line => line.split(delimiter))
+    val labeledPointData = splittedData.map(row => 
       new LabeledPoint(
             row.last.toDouble, 
             Vectors.dense(row.take(row.length - 1).map(str => str.toDouble))
       )
     )
-    
-    println
-    println("INICIANDO CAIM...")
-    val result = CAIM.discretizeAllVariables(data,sc, MEASURE_COLS)
-    
-    println
-    println("CAIM FINALIZADO...")
-    
-    //TODO save new data
+    return(labeledPointData)
   }
   
-    def readInputString(args:Array[String]): Unit = 
+  
+  private def readInputString(args:Array[String]) = 
   {
     val total = args.length -1
+    val delimiter = parseOption(args, total, "-FIELD_DELIMITER")
+    val inputFile = parseOption(args, total, "-FILE_INPUT")
+    val outputFile = parseOption(args, total, "-FILE_DATA_OUTPUT")
+    val cutsOutputFile = parseOption(args, total, "-FILE_CP_OUTPUT")
+    val nColumns = parseOption(args, total, "-MEASURE_COLS").toInt
     
-    var found = false
-    for (i <- 0 until total if !found)
-    {
-      if (args(i).equals("-FILE_INPUT"))
-      {
-        FILE_INPUT = args(i+1)
-        found = true
-      }
-    }
-    if (found == false)
-			throw new Exception("Missing -FILE_INPUT");
-    
-//    found = false
-//    for (i <- 0 until total if !found)
-//    {
-//      if (args(i).equals("-FILE_CP_OUTPUT"))
-//      {
-//        FILE_CP_OUTPUT = args(i+1)
-//        found = true
-//      }
-//    }
-//    if (found == false)
-//			throw new Exception("Missing -FILE_CP_OUTPUT");
-    
-//    found = false
-//    for (i <- 0 until total if !found)
-//    {
-//      if (args(i).equals("-FILE_DATA_OUTPUT"))
-//      {
-//        FILE_DATA_OUTPUT = args(i+1)
-//        found = true
-//      }
-//    }
-//    if (found == false)
-//			throw new Exception("Missing -FILE_DATA_OUTPUT");
-    
-    found = false
-    for (i <- 0 until total if !found)
-    {
-      if (args(i).equals("-MEASURE_COLS"))
-      {
-        MEASURE_COLS = args(i+1).toInt
-        found = true
-      }
-    }
-    if (found == false)
-			throw new Exception("Missing -MEASURE_COLS");
-    
-    found = false
-    for (i <- 0 until total if !found)
-    {
-      if (args(i).equals("-FIELD_DELIMITER"))
-      {
-        FIELD_DELIMITER = args(i+1).charAt(0)
-        found = true
-      }
-    }
-
-}
+    (delimiter, inputFile, outputFile, cutsOutputFile, nColumns)
+  }
+  
+  
+  private def parseOption(args: Array[String], total: Int, option: String):
+    String =
+  {
+    for (i <- 0 until total if args(i).equals(option))
+        return(args(i+1))
+        
+		throw new Exception("Missing " + option)
+  }
 }

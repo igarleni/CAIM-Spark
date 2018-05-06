@@ -1,17 +1,18 @@
 #compiled source
 target/*
-results/*
 
 #logs
 .cache-main
 .classpath
 .project
+input/*
+output/*
 
-#config
+#config files
 .settings/*
 pom.xml
 
 #others
 META-INF/MANIFEST.MF
 build.properties
-data/
+

@@ -9,7 +9,7 @@ import scala.collection.mutable.ArrayBuffer
 
 object CAIM {
   def discretizeAllVariables(data:RDD[LabeledPoint], sc:SparkContext, cols:Int):
-		RDD[LabeledPoint] =
+		(RDD[LabeledPoint], Array[(Int, Array[Float])]) =
 	{
 		val labels2Int = data.map(_.label).distinct.collect.zipWithIndex.toMap
 		val nLabels = labels2Int.size
@@ -29,7 +29,7 @@ object CAIM {
 		}
 		
 		val discretizedData = discretizeData(bins, sortedDistinctValues.map(_._1))
-		return discretizedData
+		return (discretizedData, Array[(Int, Array[Float])]())
 	}
 
 
