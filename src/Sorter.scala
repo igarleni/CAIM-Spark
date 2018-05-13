@@ -12,7 +12,7 @@ object Sorter {
       Broadcast[scala.collection.immutable.Map[Any, Int]]):
       RDD[(Float, Array[Long])] =
   {
-    return null //TODO data.dtypes?
+    return null //TODO data.dtypes? 
   }
   
   	def sortValues(data:RDD[LabeledPoint], sc:SparkContext,
