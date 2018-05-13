@@ -8,9 +8,10 @@ import scala.collection.mutable.ArrayBuffer
 
 object CAIMmulti
 {
-	def caculateBins(dimension:Int,
-		dimensionData: RDD[(Long,(Float, Array[Long]))],
-		nLabels: Int): ArrayBuffer[(Int,(Float,Float))] =
+  
+	def caculateBins(
+		dimensionData: RDD[(Long,(Float, Array[Long]))], nLabels: Int):
+		  Array[Float] =
 	{
 		dimensionData.persist
 
@@ -65,7 +66,7 @@ object CAIMmulti
 		// Fix maxCutpoint Fix, so it	gets its true value
 		finalIDBins(0) = ( (selectedCutPoints(0),	finalIDBins(0)._1._2), 0 )
 		
-		val result = ArrayBuffer[(Int,(Float,Float))]()
+		val result = Array[Float](0)
 		//for (bin <- finalIDBins) result += (dimension, bin._1)
 		result
 	}

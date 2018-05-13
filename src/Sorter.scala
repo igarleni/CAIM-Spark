@@ -1,12 +1,19 @@
-import org.apache.spark.rdd._
+import org.apache.spark.sql.DataFrame
 import org.apache.spark.SparkContext
-import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.mllib.linalg.DenseVector
-import org.apache.spark.mllib.linalg.SparseVector
+
+import org.apache.spark.rdd._
 import org.apache.spark.broadcast.Broadcast
 import scala.collection.Map
 
 object Sorter {
+  
+  def getSortedDistinctData(data: DataFrame,
+      bUniqueTargetLabelsWithIndex: 
+      Broadcast[scala.collection.immutable.Map[Any, Int]]):
+      RDD[(Float, Array[Long])] =
+  {
+    return null //TODO data.dtypes?
+  }
   
   	def sortValues(data:RDD[LabeledPoint], sc:SparkContext,
 		bLabels2Int:Broadcast[scala.collection.immutable.Map[Double, Int]], nLabels:Int): 

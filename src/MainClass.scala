@@ -1,94 +1,73 @@
-import org.apache.spark.SparkContext
-import org.apache.spark.SparkConf
-import org.apache.spark.rdd._
-import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.mllib.linalg.DenseVector
-import org.apache.spark.mllib.linalg.SparseVector
-import org.apache.spark.mllib.linalg.{Vector, Vectors}
+import org.apache.spark.sql.SparkSession
+import  org.apache.spark.sql.DataFrame 
 import java.io._
 
 object MainClass {
   
   def main(args:Array[String]): Unit = 
   {
-    val sc = generateSparkContext()
-    val (delimiter, inputFile, outputFile, cutsOutputFile, nColumns) = 
-      readInputString(args)
-    val rawData = sc.textFile(inputFile)
-    val data = transformToLabeledPoint(rawData, delimiter)
+    val sparkSession = generateSparkSession()
+    val (delimiter, inputPath, inputFile, outputPath, outputFile, cutsOutputFile,
+        targetColName) =  readInputStrings(args)
+    val inputData = sparkSession.read.option("inferSchema", "true")
+      .csv(inputPath + inputFile)
+      
+    val (outputData, cutPoints) = CAIM.discretizeAllVariables(inputData,
+        sparkSession.sparkContext, targetColName)
     
-    // val (outputData, cutPoints) = CAIM.discretizeAllVariables(data, sc, nColumns)
+    saveDataFrame(outputData, outputFile, delimiter)
+    saveCutPoints(cutPoints, cutsOutputFile)
+  }
+  
     
-    saveLabeledPoint(data, outputFile, delimiter)
-    // saveCutPoints(cutPoints, cutsOutputFile)
+  private def generateSparkSession(): SparkSession =
+  {
+    val sparkSession = SparkSession.builder().appName("Caim-Discretization")
+      .getOrCreate()
+    sparkSession.sparkContext.setLogLevel("ERROR")
+    return (sparkSession)
   }
   
   
-  private def saveLabeledPoint(data: RDD[LabeledPoint], outputFile: String,
+  private def readInputStrings(args:Array[String]) = 
+  {
+    val total = args.length - 1
+    val parseOption:(String => String) = option =>
+    ({
+      val pos = args.indexOf(option)
+      if (pos != -1 && pos < total)
+        args(pos +1)
+      else
+        throw new Exception("Missing " + option)
+    })
+    
+    val delimiter = parseOption("-FIELD_DELIMITER")
+    val inputPath = parseOption("-INPUT_PATH")
+    val inputFile = parseOption("-INPUT_FILE")
+    val outputPath = parseOption("-OUTPUT_PATH")
+    val outputFile = parseOption("-OUTPUT_FILE")
+    val cutsOutputFile = parseOption("-OUTPUT_CPFILE")
+    val targetColName = parseOption("-TARGET_COLUMN_NAME")
+    
+    (delimiter, inputPath, inputFile, outputPath, outputFile, cutsOutputFile,
+        targetColName)
+  }
+    
+  private def saveDataFrame(outputData: DataFrame, outputFile: String,
       delimiter: String) =
   {
-    val stringRDD = data.map(point => 
-      point.features.toArray.mkString(delimiter)
-      + delimiter + point.label.toString)
-    stringRDD.saveAsTextFile(outputFile)
+    
   }
-  
     
   private def saveCutPoints(cutPoints: Array[(Int, Array[Float])],
       cutsOutputFile: String) = 
   {
     val printWriter = new PrintWriter(new File(cutsOutputFile))
-    cutPoints.foreach(variable => 
+    val printCutPoint = (variable: (Int, Array[Float])) => 
       printWriter.write("Variable " + variable._1 +
-          ", CutPoints = " + variable._2.mkString(", ")))
+          ", CutPoints = " + variable._2.mkString(", ") + "\n")
+    cutPoints.foreach(printCutPoint(_))
+    printWriter.close()
   }
   
-  
-  private def generateSparkContext(): SparkContext =
-  {
-    val conf = new SparkConf()
-    conf.set("spark.cores.max", "20")
-    conf.set("spark.executor.memory", "6g")
-    conf.set("spark.kryoserializer.buffer.max", "512")
-    conf.setAppName("CAIMdiscretization")
-    
-    return (new SparkContext(conf))
-  }
-  
-  
-  private def transformToLabeledPoint(rawData: RDD[String], delimiter: String):
-    RDD[LabeledPoint] =
-  {
-    val splittedData = rawData.map(line => line.split(delimiter))
-    val labeledPointData = splittedData.map(row => 
-      new LabeledPoint(
-            row.last.toDouble, 
-            Vectors.dense(row.take(row.length - 1).map(str => str.toDouble))
-      )
-    )
-    return(labeledPointData)
-  }
-  
-  
-  private def readInputString(args:Array[String]) = 
-  {
-    val total = args.length -1
-    val delimiter = parseOption(args, total, "-FIELD_DELIMITER")
-    val inputFile = parseOption(args, total, "-FILE_INPUT")
-    val outputFile = parseOption(args, total, "-FILE_DATA_OUTPUT")
-    val cutsOutputFile = parseOption(args, total, "-FILE_CP_OUTPUT")
-    val nColumns = parseOption(args, total, "-MEASURE_COLS").toInt
-    
-    (delimiter, inputFile, outputFile, cutsOutputFile, nColumns)
-  }
-  
-  
-  private def parseOption(args: Array[String], total: Int, option: String):
-    String =
-  {
-    for (i <- 0 until total if args(i).equals(option))
-        return(args(i+1))
-        
-		throw new Exception("Missing " + option)
-  }
 }
