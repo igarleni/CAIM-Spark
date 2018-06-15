@@ -1,8 +1,5 @@
 import org.apache.spark.rdd._
 import org.apache.spark.SparkContext
-import org.apache.spark.mllib.regression.LabeledPoint
-import org.apache.spark.mllib.linalg.DenseVector
-import org.apache.spark.mllib.linalg.SparseVector
 import org.apache.spark.broadcast.Broadcast
 import scala.collection.Map
 import scala.collection.mutable.ArrayBuffer

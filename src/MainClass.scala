@@ -9,14 +9,14 @@ object MainClass {
     val sparkSession = generateSparkSession()
     val (delimiter, inputPath, inputFile, outputPath, outputFile, cutsOutputFile,
         targetColName) =  readInputStrings(args)
-    val inputData = sparkSession.read.option("inferSchema", "true")
-      .csv(inputPath + inputFile)
-      
-    val (outputData, cutPoints) = CAIM.discretizeAllVariables(inputData,
-        sparkSession.sparkContext, targetColName)
-    
-    saveDataFrame(outputData, outputFile, delimiter)
-    saveCutPoints(cutPoints, cutsOutputFile)
+    val inputData = sparkSession.read.option("header", "true")
+        .csv(inputPath + inputFile)
+    inputData.foreach(row => println(row.toString()))
+//    val (outputData, cutPoints) = CAIM.discretizeAllVariables(inputData,
+//        sparkSession.sparkContext, targetColName)
+//    
+//    saveDataFrame(outputData, outputFile, delimiter)
+//    saveCutPoints(cutPoints, cutsOutputFile)
   }
   
     
