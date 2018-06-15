@@ -10,13 +10,13 @@ object MainClass {
     val (delimiter, inputPath, inputFile, outputPath, outputFile, cutsOutputFile,
         targetColName) =  readInputStrings(args)
     val inputData = sparkSession.read.option("header", "true")
-        .csv(inputPath + inputFile)
-    inputData.foreach(row => println(row.toString()))
-//    val (outputData, cutPoints) = CAIM.discretizeAllVariables(inputData,
-//        sparkSession.sparkContext, targetColName)
-//    
-//    saveDataFrame(outputData, outputFile, delimiter)
-//    saveCutPoints(cutPoints, cutsOutputFile)
+        .csv(inputPath + "/" + inputFile)
+        
+    val (outputData, cutPoints) = CAIM.discretizeAllVariables(inputData,
+        sparkSession.sparkContext, targetColName)
+    
+    saveDataFrame(outputData, outputPath, outputFile, delimiter)
+    saveCutPoints(cutPoints, cutsOutputFile)
   }
   
     
@@ -46,27 +46,27 @@ object MainClass {
     val inputFile = parseOption("-INPUT_FILE")
     val outputPath = parseOption("-OUTPUT_PATH")
     val outputFile = parseOption("-OUTPUT_FILE")
-    val cutsOutputFile = parseOption("-OUTPUT_CPFILE")
+    val cutsOutputFile = parseOption("-OUTPUT_CP_FILE")
     val targetColName = parseOption("-TARGET_COLUMN_NAME")
     
     (delimiter, inputPath, inputFile, outputPath, outputFile, cutsOutputFile,
         targetColName)
   }
     
-  private def saveDataFrame(outputData: DataFrame, outputFile: String,
-      delimiter: String) =
+  private def saveDataFrame(outputData: DataFrame, outputPath: String,
+      outputFile: String, delimiter: String) =
   {
-    
+    outputData.write.option("header", "true").option("sep", delimiter)
+      .csv(outputPath + "/" + outputFile)
   }
     
-  private def saveCutPoints(cutPoints: Array[(Int, Array[Float])],
+  private def saveCutPoints(cutPoints: Map[String, List[Float]],
       cutsOutputFile: String) = 
   {
     val printWriter = new PrintWriter(new File(cutsOutputFile))
     val printCutPoint = (variable: (Int, Array[Float])) => 
       printWriter.write("Variable " + variable._1 +
           ", CutPoints = " + variable._2.mkString(", ") + "\n")
-    cutPoints.foreach(printCutPoint(_))
     printWriter.close()
   }
   

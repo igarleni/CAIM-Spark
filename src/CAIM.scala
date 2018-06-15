@@ -3,12 +3,11 @@ import org.apache.spark.sql.{DataFrame, Row}
 
 import org.apache.spark.rdd._
 import org.apache.spark.broadcast.Broadcast
-import scala.collection.Map
 
 object CAIM {
   
   def discretizeAllVariables(data:DataFrame, sparkContext: SparkContext, 
-      targetName: String): (DataFrame, Map[String, Array[Float]]) =
+      targetName: String): (DataFrame, Map[String, List[Float]]) =
 	{
     
 		val uniqueTargetLabelsWithIndex = data.select(targetName).distinct
@@ -18,6 +17,8 @@ object CAIM {
 		    
 		val nLabels = uniqueTargetLabelsWithIndex.size
 		val variablesNames = data.columns
+		
+		//TODO seguir aqui, convertir for en tail recursive y transfomrar RDD a DataFrame
 		var bins = Map[String, Array[Float]]()
 		
 		for (variableName <- variablesNames if variableName != targetName)
