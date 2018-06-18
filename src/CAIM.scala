@@ -1,49 +1,41 @@
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.{DataFrame, Row}
-
 import org.apache.spark.rdd._
+import org.apache.spark.sql.expressions._
+import org.apache.spark.sql.functions.row_number
 import org.apache.spark.broadcast.Broadcast
 
 object CAIM {
   
-  def discretizeAllVariables(data:DataFrame, sparkContext: SparkContext, 
-      targetName: String): (DataFrame, Map[String, List[Float]]) =
+  def discretizeVariable(sc: SparkContext, data:DataFrame,
+      targetName: String, variableName: String):
+      (DataFrame, List[Float]) =
 	{
-    
-		val uniqueTargetLabelsWithIndex = data.select(targetName).distinct
-		    .collect.map(row => row(0)).zipWithIndex.toMap
-		val bUniqueTargetLabelsWithIndex = sparkContext
-		    .broadcast(uniqueTargetLabelsWithIndex)
-		    
-		val nLabels = uniqueTargetLabelsWithIndex.size
-		val variablesNames = data.columns
-		
-		//TODO seguir aqui, convertir for en tail recursive y transfomrar RDD a DataFrame
-		var bins = Map[String, Array[Float]]()
-		
-		for (variableName <- variablesNames if variableName != targetName)
-		{
-		  val variableAndTargetData = data.select(variableName, targetName)
-		  val sorteduniqueData = Sorter.getSortedDistinctData(variableAndTargetData, 
-		      bUniqueTargetLabelsWithIndex)
-			val variableData = sorteduniqueData.zipWithIndex().map(_.swap)
-			bins = bins + (variableName -> CAIMmulti.caculateBins(variableData,
-			    nLabels))
-		}
-		
-		val discretizedData = discretizeData(bins, data, variablesNames, targetName)
+    val dataFiltered = data.select(variableName, targetName)
+    val dataSortedByVariable = dataFiltered.orderBy(variableName)
+    val w = Window.orderBy("count")
+    val dataWithId = dataSortedByVariable.withColumn("index", row_number().over(w))
+    val (frequenciesTable, nLabels) = calculateFrequenciesTable(sc, dataWithId,
+        variableName, targetName)
+		val bins = CAIMmulti.calculateBins(sc, frequenciesTable, nLabels)
+		val discretizedData = discretizeData(bins, data)
 		return (discretizedData, bins)
 	}
   
+  private def calculateFrequenciesTable(sc: SparkContext, data: DataFrame, 
+      variableName: String, targetName: String): 
+      (RDD[(Long,(Float,Array[Long]))], Int) =
+  {
+		val uniqueTargetLabelsWithIndex = data.select(targetName).distinct
+		    .collect.map(row => row(0)).zipWithIndex.toMap
+    val bUniqueTargetLabelsWithIndex = sc.broadcast(uniqueTargetLabelsWithIndex)
+		val nTargetLabels = uniqueTargetLabelsWithIndex.size
+    return null
+  }
   
-	private def discretizeData(bins: Map[String, Array[Float]],
-	    data: DataFrame, variablesNames: Array[String], targetName: String):
+	private def discretizeData(bins: List[Float], data: DataFrame):
 	    DataFrame =
 	{
-	  for (variableName <- variablesNames if variableName != targetName)
-		{
-	    
-		}
 	  return null // TODO
 	}
 	

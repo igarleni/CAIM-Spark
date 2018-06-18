@@ -8,12 +8,12 @@ object MainClass {
   {
     val sparkSession = generateSparkSession()
     val (delimiter, inputPath, inputFile, outputPath, outputFile, cutsOutputFile,
-        targetColName) =  readInputStrings(args)
+        targetColName, variableColName) =  readInputStrings(args)
     val inputData = sparkSession.read.option("header", "true")
         .csv(inputPath + "/" + inputFile)
         
-    val (outputData, cutPoints) = CAIM.discretizeAllVariables(inputData,
-        sparkSession.sparkContext, targetColName)
+    val (outputData, cutPoints) = CAIM.discretizeVariable(sparkSession.sparkContext,
+        inputData, targetColName, variableColName)
     
     saveDataFrame(outputData, outputPath, outputFile, delimiter)
     saveCutPoints(cutPoints, cutsOutputFile)
@@ -48,9 +48,10 @@ object MainClass {
     val outputFile = parseOption("-OUTPUT_FILE")
     val cutsOutputFile = parseOption("-OUTPUT_CP_FILE")
     val targetColName = parseOption("-TARGET_COLUMN_NAME")
+    val variableColName = parseOption("-VARIABLE_COLUMN_NAME")
     
     (delimiter, inputPath, inputFile, outputPath, outputFile, cutsOutputFile,
-        targetColName)
+        targetColName, variableColName)
   }
     
   private def saveDataFrame(outputData: DataFrame, outputPath: String,
@@ -60,7 +61,7 @@ object MainClass {
       .csv(outputPath + "/" + outputFile)
   }
     
-  private def saveCutPoints(cutPoints: Map[String, List[Float]],
+  private def saveCutPoints(cutPoints: List[Float],
       cutsOutputFile: String) = 
   {
     val printWriter = new PrintWriter(new File(cutsOutputFile))

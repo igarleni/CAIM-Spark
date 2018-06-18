@@ -6,17 +6,17 @@ import scala.collection.mutable.ArrayBuffer
 object CAIMmulti
 {
   
-	def caculateBins(
-		dimensionData: RDD[(Long,(Float, Array[Long]))], nLabels: Int):
-		  Array[Float] =
+	def calculateBins(sc: SparkContext,
+		frequenciesTable: RDD[(Long, (Float, Array[Long]))], nLabels: Int):
+		  List[Float] =
 	{
-		dimensionData.persist
+		frequenciesTable.persist
 
 		// Inicializar variables
 		var globalCaim = -Double.MaxValue
 		val selectedCutPoints = ArrayBuffer[Long]()
-		selectedCutPoints += dimensionData.first._1  // minimo
-		selectedCutPoints += dimensionData.keys.max  // maximo
+		selectedCutPoints += frequenciesTable.first._1  // minimo
+		selectedCutPoints += frequenciesTable.keys.max  // maximo
 		val finalIDBins = ArrayBuffer[((Long,Long), Double)]()
 		var nFinalBins = 1
 		val fullRangeBin = ( (selectedCutPoints(0) - 1 , selectedCutPoints(1)),  // -1 para englobar todo
@@ -24,12 +24,12 @@ object CAIMmulti
 		finalIDBins += fullRangeBin
 
 		// Loop control variables
-		var numRemainingCPs = dimensionData.count()
+		var numRemainingCPs = frequenciesTable.count()
 		numRemainingCPs -= 2  //minimo y maximo extraidos antes
 		var nTempBins = nFinalBins + 1
 		while(numRemainingCPs > 0 && nTempBins > nLabels)
 		{
-		  val bestCandidate = searchBestCandidate(finalIDBins, dimensionData,
+		  val bestCandidate = searchBestCandidate(finalIDBins, frequenciesTable,
 		      nTempBins, nLabels, globalCaim)
 		  
 			if(bestCandidate._2 >	globalCaim)
@@ -65,7 +65,7 @@ object CAIMmulti
 		
 		val result = Array[Float](0)
 		//for (bin <- finalIDBins) result += (dimension, bin._1)
-		result
+		result.toList
 	}
 	
 	def searchBestCandidate(finalIDBins: ArrayBuffer[((Long,Long), Double)],
