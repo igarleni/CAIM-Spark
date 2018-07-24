@@ -7,16 +7,18 @@ object MainClass {
   def main(args:Array[String]): Unit = 
   {
     val sparkSession = generateSparkSession()
-    val (delimiter, inputPath, inputFile, outputPath, outputFile, cutsOutputFile,
-        targetColName, variableColName) =  readInputStrings(args)
-    val inputData = sparkSession.read.option("header", "true")
-        .csv(inputPath + "/" + inputFile)
-        
-    val (outputData, cutPoints) = CAIM.discretizeVariable(sparkSession.sparkContext,
-        inputData, targetColName, variableColName)
+    val (delimiter, inputPath, inputFile, outputPath, outputFile, 
+        cutsOutputFile, targetColName, variableColName) =
+          readInputStrings(args)
+    val inputData = sparkSession.read.option("delimiter", delimiter)
+    .option("header", "true").option("inferSchema", "true")
+    .csv(inputPath + inputFile)
+    val (outputData, cutPoints) =
+      CAIM.discretizeVariable(sparkSession, inputData,
+          targetColName, variableColName)
     
-    saveDataFrame(outputData, outputPath, outputFile, delimiter)
-    saveCutPoints(cutPoints, cutsOutputFile)
+//    saveDataFrame(outputData, outputPath, outputFile, delimiter)
+//    saveCutPoints(cutPoints, cutsOutputFile)
   }
   
     
@@ -58,7 +60,7 @@ object MainClass {
       outputFile: String, delimiter: String) =
   {
     outputData.write.option("header", "true").option("sep", delimiter)
-      .csv(outputPath + "/" + outputFile)
+      .csv(outputPath + outputFile)
   }
     
   private def saveCutPoints(cutPoints: List[Float],

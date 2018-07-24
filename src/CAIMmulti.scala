@@ -7,7 +7,7 @@ object CAIMmulti
 {
   
 	def calculateBins(sc: SparkContext,
-		frequenciesTable: RDD[(Long, (Float, Array[Long]))], nLabels: Int):
+		frequenciesTable: RDD[(Long, (Double, Array[Long]))], nLabels: Int):
 		  List[Float] =
 	{
 		frequenciesTable.persist
