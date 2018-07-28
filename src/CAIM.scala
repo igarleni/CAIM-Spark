@@ -39,7 +39,7 @@ object CAIM {
   
   private def calculateFrequenciesTable(sc: SparkContext, data: DataFrame, 
       variableName: String, targetName: String): 
-      (RDD[(Long, (Double, Array[Long]))], Int) =
+      (RDD[(Long, Array[Long])], Int) =
   {
 		val targetLabelsWithIndex = data.select(targetName).distinct
 		    .collect.map(row => row.getAs[Int](targetName)).zipWithIndex.toMap
@@ -50,8 +50,7 @@ object CAIM {
   		val targetValue = rowData.getAs[Int](targetName)
   		targetFrequency(bTargetLabels.value(targetValue)) = 1L
   		val rowId = rowData.getAs[Long]("index")
-  		val variableData = rowData.getAs[Double](variableName)
-  		val rowInformation = (rowId, (variableData, targetFrequency))
+  		val rowInformation = (rowId, targetFrequency)
   		rowInformation
   		}
 		)
