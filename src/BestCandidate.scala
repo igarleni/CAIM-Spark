@@ -61,7 +61,7 @@ object BestCandidate {
   	  (point:(Long, (Array[Long], Array[Long])))	=> 
   	  {
   		val caimLeft = point._2._1.max / point._2._1.sum.toDouble
-  		val caimRight = point._2._1.max / point._2._1.sum.toDouble
+  		val caimRight = point._2._2.max / point._2._2.sum.toDouble
   		(point._1, (caimLeft, caimRight))
   	  }
   	val	pointsPartialCaim = pointInfluences.reduceByKey(influencesCombiner)
