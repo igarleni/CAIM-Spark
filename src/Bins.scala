@@ -7,10 +7,11 @@ object Bins
 {
   
 	def calculate(sc: SparkContext,
-		frequenciesTable: RDD[(Long, Array[Long])], nLabels: Int):
-		  List[Long] =
+		frequenciesTable: RDD[(Double, Array[Long])], nLabels: Int):
+		  List[Double] =
 	{
 		frequenciesTable.persist
+		
 		// Init CAIM and bins variables
 		var globalCaim = Double.MinValue
 		val selectedCutPoints = initSelectedCutPoints(frequenciesTable)
@@ -20,14 +21,14 @@ object Bins
 		var exitCondition = numRemainingCPs > 0 && bins.length + 1 > nLabels
 		while(exitCondition)
 		{
-		  val ((pointID, pointPartialCaim), pointCaim) =
+		  val (point, pointScore) =
 		    BestCandidate.calculate(bins, frequenciesTable, nLabels, globalCaim)
-			if(pointCaim >	globalCaim)
+			if(pointScore >	globalCaim)
 			{
-				selectedCutPoints += pointID
+				selectedCutPoints += point
 				numRemainingCPs	-= 1
-				bins = updateBins(bins, pointID, pointPartialCaim)
-				globalCaim = pointCaim
+				bins = updateBins(bins, point)
+				globalCaim = pointScore
 				exitCondition = numRemainingCPs > 0 && bins.length + 1 > nLabels
 			}
 			else
@@ -37,34 +38,49 @@ object Bins
 		selectedCutPoints.toList
 	}
 	
-	def initSelectedCutPoints(frequenciesTable: RDD[(Long, Array[Long])]):
-	ArrayBuffer[Long] = 
+	private def initSelectedCutPoints(
+	    frequenciesTable: RDD[(Double, Array[Long])]): ArrayBuffer[Double] = 
 	{
-	  val selectedCutPoints = ArrayBuffer[Long]()
-		selectedCutPoints += 1  // min
-		val nRows = frequenciesTable.count()
-		selectedCutPoints += nRows  // max
+	  val selectedCutPoints = ArrayBuffer[Double]()
+		selectedCutPoints += frequenciesTable.first._1  // min
+		selectedCutPoints += frequenciesTable.max()(
+		    new Ordering[Tuple2[Double, Array[Long]]]() 
+  	    {
+  	      override def compare(x: (Double, Array[Long]),
+  	          y: (Double, Array[Long])): Int = 
+  	        Ordering[Double].compare(x._1, y._1)
+        }
+    )._1// max
 		selectedCutPoints
 	}
 	
-	def updateBins(bins: List[((Long, Long), Double)], newCutPoint: Long, 
-	    newCaims: (Double, Double)): List[((Long, Long), Double)] =
+	private def updateBins(bins: List[((Double, Double), Double)],
+	    newCutPoint: Double): List[((Double, Double), Double)] =
   bins match
   {
-  	case Nil => throw new Exception("Empty bin list!")
+  	case Nil => throw new Exception("End of bin list!")
   	case (cutPoints, _) :: tail if (newCutPoint < cutPoints._2) => 
-  		insertCutPoint(cutPoints, newCutPoint, newCaims) ::: tail
-  	case bin::tail => bin :: updateBins(tail, newCutPoint, newCaims)
+  		insertCutPoint(cutPoints, newCutPoint) ::: tail
+  	case bin::tail => bin :: updateBins(tail, newCutPoint)
   }
   
-  def insertCutPoint(cutPoints: (Long, Long), newCutPoint: Long,
-      newCaims: (Double, Double)): List[((Long, Long), Double)] =
+  private def insertCutPoint(cutPoints: (Double, Double), newCutPoint: Double):
+    List[((Double, Double), Double)] =
   {
-  	val binLeft = ((cutPoints._1, newCutPoint), newCaims._1)
-  	val binRight = ((newCutPoint, cutPoints._2), newCaims._2)
-  	binLeft :: binRight :: Nil
+	  val leftCutpoints = (cutPoints._1, newCutPoint)
+	  val rightCutpoints = (newCutPoint, cutPoints._2)
+    val leftScore = calculateBinScore(leftCutpoints)
+    val rightScore = calculateBinScore(leftCutpoints)
+  	val leftBin = (leftCutpoints, leftScore)
+  	val rightBin = (rightCutpoints, rightScore)
+  	leftBin :: rightBin :: Nil
   }
-	
+  
+  private def calculateBinScore(cutpoints: (Double, Double)): Double =
+  {
+    0.0 //TODO calcular bin score
+  }
+  
 }
 
 

@@ -4,93 +4,86 @@ import org.apache.spark.broadcast.Broadcast
 
 object BestCandidate {
   
-  def calculate(bins: List[((Long,Long), Double)],
-  	    frequenciesTable: RDD[(Long, Array[Long])], nLabels: Int,
+  def calculate(bins: List[((Double, Double), Double)],
+  	    frequenciesTable: RDD[(Double, Array[Long])], nLabels: Int,
   	    globalCaim: Double):
-  	    ((Long, (Double, Double)), Double) =
+  	    (Double, Double) =
   {
-  	var bestCaim = Double.MinValue
-  	var bestPoint: (Long, (Double,Double)) = null
+  	var bestScore = Double.MinValue
+  	var bestPoint = -1.0
   
   	for(bin <- bins)
   	{
   		val pointInfluences = calculatePointInfluences(bin, frequenciesTable,
   		    nLabels)
-  		val pointsPartialCaim = calculatePartialCaim(pointInfluences)
-  		val (bestBinPoint, bestBinCaim) = getBestPoint(pointsPartialCaim,
+  		val (bestBinPoint, bestBinScore) = searchBestScore(pointInfluences, 
   		    globalCaim, bins.length, bin)
-  
-  		if (bestBinCaim > bestCaim)
+  		if (bestBinScore > bestScore)
   		{
-  			bestCaim	= bestCaim
+  			bestScore	= bestBinScore
   			bestPoint =	bestBinPoint
   		}
   	}
-  	(bestPoint, bestCaim)
+  	(bestPoint, bestScore)
   }
   
-  private def calculatePointInfluences(bin: ((Long, Long), Double),
-  	frequenciesTable: RDD[(Long, Array[Long])], nLabels: Int):
-  	RDD[(Long, (Array[Long], Array[Long]))] =
+  private def calculatePointInfluences(bin: ((Double, Double), Double),
+  	frequenciesTable: RDD[(Double, Array[Long])], nLabels: Int):
+  	RDD[(Double, (Array[Long], Array[Long]))] =
   {
   	val min	= bin._1._1
   	val max	= bin._1._2
   	val binData = frequenciesTable.filter(point => (point._1 <= max) 
   			&& (point._1 > min))
-  	val pointInfluences = binData.flatMap(point => {
-  		val caimLeft = for(pointId <- min + 1 to point._1) 
-  			yield (pointId, (Array.fill[Long](nLabels)(0L), point._2))
-  		val caimRight = for(pointId <- point._1 + 1 to max) 
-  			yield (pointId, (point._2, Array.fill[Long](nLabels)(0L)))
-  
-  		val caimRightArray = caimRight.toArray
-  		val caimLeftArray	= caimLeft.toArray
-  		caimRightArray ++ caimLeftArray
+  	val pointInfluences = binData.cartesian(binData).flatMap(points =>
+	  {
+  	  val point1 = points._1
+  	  val point2 = points._2
+  	  var point1Score = Array[(Double, (Array[Long], Array[Long]))]()
+  	  var point2Score = Array[(Double, (Array[Long], Array[Long]))]()
+  	  val emptyArray = Array.fill(nLabels)(0L)
+  	  if (point1._1 > point2._1)
+  	  {
+  	    point1Score = Array((point1._1, (point2._2, emptyArray)))
+  	    point2Score = Array((point2._1, (emptyArray, point1._2)))
+  	  }
+  	  else if (point1._1 < point2._1)
+  	  {
+  	    point1Score = Array((point1._1, (emptyArray, point2._2)))
+  	    point2Score = Array((point2._1, (point1._2, emptyArray)))
+  	  }
+  	  point1Score ++ point2Score
   	})
   	pointInfluences
   }
   
-  private def calculatePartialCaim(
-  	pointInfluences: RDD[(Long, (Array[Long], Array[Long]))]):
-  	RDD[(Long, (Double, Double))] =
+  private def searchBestScore(
+  	pointInfluences: RDD[(Double, (Array[Long], Array[Long]))], 
+  	globalCaim: Double, nBins: Double, bin: ((Double, Double), Double)):
+  	(Double, Double) =
   {
   	val	influencesCombiner = 
   	  (x:(Array[Long],Array[Long]) ,y:(Array[Long],Array[Long])) => 
   		  ((x._1,	y._1).zipped.map(_+_), (x._2, y._2).zipped.map(_+_))
-  	val	calculateCaimBins = 
-  	  (point:(Long, (Array[Long], Array[Long])))	=> 
+	  val	partialScore	= globalCaim * nBins - bin._2
+  	val	calculateScoreBins = 
+  	  (point:(Double, (Array[Long], Array[Long])))	=> 
   	  {
   		val caimLeft = point._2._1.max / point._2._1.sum.toDouble
   		val caimRight = point._2._2.max / point._2._2.sum.toDouble
-  		(point._1, (caimLeft, caimRight))
+  		val caim = (caimLeft + caimRight + partialScore) / (nBins + 1)
+  		(point._1, caim)
   	  }
-  	val	pointsPartialCaim = pointInfluences.reduceByKey(influencesCombiner)
-  	.map((point => calculateCaimBins(point)))
-  	pointsPartialCaim
-  }
-  
-  private def getBestPoint(pointsPartialCaim: RDD[(Long, (Double, Double))],
-      globalCaim: Double, nBins: Double, bin: ((Long, Long), Double)): 
-      ((Long, (Double, Double)), Double) =
-  {
-  	val	partialCaim	= globalCaim * nBins - bin._2
-  	val	calculateCaimPoint	= (x:(Long,(Double,Double))) =>
-  	  x._2._1	+ x._2._2 +	partialCaim	/ (nBins + 1)
-  	val	bestCaimPoint =	pointsPartialCaim.max()
-  	(
-  		new Ordering[(Long, (Double,Double))]() 
-  		{
-  		  override	def	compare(x: (Long, (Double, Double)), 
-  			y: (Long, (Double,	Double))): Int = 
-  			{
-  			val xCaim = calculateCaimPoint(x)
-  			val yCaim = calculateCaimPoint(y)
-  			Ordering[Double].compare(xCaim,	yCaim)
-  	  }
-  		}
-  	)
-  	val bestCaim = calculateCaimPoint(bestCaimPoint)
-  	(bestCaimPoint, bestCaim)
+  	val	pointsCaim = pointInfluences.reduceByKey(influencesCombiner)
+  	.map(point => calculateScoreBins(point))
+  	val	bestCaimPoint =	pointsCaim.max()(
+  	    new Ordering[Tuple2[Double, Double]]() 
+  	    {
+  	      override def compare(x: (Double, Double), y: (Double, Double)): Int = 
+  	        Ordering[Double].compare(x._2, y._2)
+        }
+    )
+    bestCaimPoint
   }
 
 }

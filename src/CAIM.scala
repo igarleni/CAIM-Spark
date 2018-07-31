@@ -28,10 +28,7 @@ object CAIM {
   {
     val dataFiltered = data.select(variableName, targetName)
     val dataSortedByVariable = dataFiltered.orderBy(variableName)
-    val w = Window.orderBy(variableName)
-    val dataWithId = dataSortedByVariable
-    .withColumn("index", row_number().over(w).cast(LongType))
-    return(dataWithId)
+    return(dataSortedByVariable)
   }
   
 

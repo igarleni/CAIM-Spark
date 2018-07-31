@@ -5,7 +5,7 @@ import org.apache.spark.rdd._
 object FrequenciesTable {
     def calculate(sc: SparkContext, data: DataFrame, 
       variableName: String, targetName: String): 
-      (RDD[(Long, Array[Long])], Int) =
+      (RDD[(Double, Array[Long])], Int) =
   {
 		val targetLabelsWithIndex = data.select(targetName).distinct
 		    .collect.map(row => row.getAs[Int](targetName)).zipWithIndex.toMap
@@ -15,11 +15,11 @@ object FrequenciesTable {
 		  val targetFrequency = Array.fill[Long](nTargetLabels)(0L)
   		val targetValue = rowData.getAs[Int](targetName)
   		targetFrequency(bTargetLabels.value(targetValue)) = 1L
-  		val rowId = rowData.getAs[Long]("index")
-  		val rowInformation = (rowId, targetFrequency)
+  		val variableData = rowData.getAs[Double](variableName)
+  		val rowInformation = (variableData, targetFrequency)
   		rowInformation
   		}
-		)
+		) //TODO quitar lo de indice
     return (frequenciesTable, nTargetLabels)
   }
 }
