@@ -27,7 +27,7 @@ object Bins
 			{
 				selectedCutPoints += point
 				numRemainingCPs	-= 1
-				bins = updateBins(bins, point)
+				bins = updateBins(bins, point, frequenciesTable)
 				globalCaim = pointScore
 				exitCondition = numRemainingCPs > 0 && bins.length + 1 > nLabels
 			}
@@ -55,30 +55,38 @@ object Bins
 	}
 	
 	private def updateBins(bins: List[((Double, Double), Double)],
-	    newCutPoint: Double): List[((Double, Double), Double)] =
+	    newCutPoint: Double, frequenciesTable: RDD[(Double, Array[Long])]): 
+	    List[((Double, Double), Double)] =
   bins match
   {
   	case Nil => throw new Exception("End of bin list!")
   	case (cutPoints, _) :: tail if (newCutPoint < cutPoints._2) => 
-  		insertCutPoint(cutPoints, newCutPoint) ::: tail
-  	case bin::tail => bin :: updateBins(tail, newCutPoint)
+  		insertCutPoint(cutPoints, newCutPoint, frequenciesTable) ::: tail
+  	case bin::tail => bin :: updateBins(tail, newCutPoint, frequenciesTable)
   }
   
-  private def insertCutPoint(cutPoints: (Double, Double), newCutPoint: Double):
-    List[((Double, Double), Double)] =
+  private def insertCutPoint(cutPoints: (Double, Double), newCutPoint: Double,
+      frequenciesTable: RDD[(Double, Array[Long])]): 
+      List[((Double, Double), Double)] =
   {
 	  val leftCutpoints = (cutPoints._1, newCutPoint)
 	  val rightCutpoints = (newCutPoint, cutPoints._2)
-    val leftScore = calculateBinScore(leftCutpoints)
-    val rightScore = calculateBinScore(leftCutpoints)
+    val leftScore = calculateBinScore(leftCutpoints, frequenciesTable)
+    val rightScore = calculateBinScore(leftCutpoints, frequenciesTable)
   	val leftBin = (leftCutpoints, leftScore)
   	val rightBin = (rightCutpoints, rightScore)
   	leftBin :: rightBin :: Nil
   }
   
-  private def calculateBinScore(cutpoints: (Double, Double)): Double =
+  private def calculateBinScore(cutpoints: (Double, Double),
+      frequenciesTable: RDD[(Double, Array[Long])]): Double =
   {
-    0.0 //TODO calcular bin score
+    val binData = frequenciesTable.filter(point => (point._1 <= cutpoints._1) 
+  			&& (point._1 > cutpoints._2))
+  	val targetFrequency = binData.values.reduce( (frequency1, frequency2) => 
+  	  (frequency1, frequency2).zipped.map(_+_))
+  	val caimScore = targetFrequency.max / targetFrequency.sum.toDouble
+    caimScore
   }
   
 }
