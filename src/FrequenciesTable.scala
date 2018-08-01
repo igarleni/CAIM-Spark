@@ -11,7 +11,7 @@ object FrequenciesTable {
 		    .collect.map(row => row.getAs[Int](targetName)).zipWithIndex.toMap
 		val bTargetLabels = sc.broadcast(targetLabelsWithIndex)
 		val nTargetLabels = targetLabelsWithIndex.size
-		val frequenciesTable = data.rdd.map( (rowData:Row) => {
+		val targetFrequencies = data.rdd.map( (rowData:Row) => {
 		  val targetFrequency = Array.fill[Long](nTargetLabels)(0L)
   		val targetValue = rowData.getAs[Int](targetName)
   		targetFrequency(bTargetLabels.value(targetValue)) = 1L
@@ -19,7 +19,12 @@ object FrequenciesTable {
   		val rowInformation = (variableData, targetFrequency)
   		rowInformation
   		}
-		) //TODO quitar lo de indice
+		)
+		val frequencyCombiner = (targetFrequency1: Array[Long], 
+		    targetFrequency2: Array[Long]) => (
+		        (targetFrequency1, targetFrequency2).zipped.map(_+_)
+        )
+		val frequenciesTable = targetFrequencies.reduceByKey(frequencyCombiner)
     return (frequenciesTable, nTargetLabels)
   }
 }

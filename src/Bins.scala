@@ -16,9 +16,9 @@ object Bins
 		var globalCaim = Double.MinValue
 		val selectedCutPoints = initSelectedCutPoints(frequenciesTable)
 		var bins = ((selectedCutPoints(0) - 1 , selectedCutPoints(1)), 
-		    globalCaim) :: Nil // -1 so its included the first point too
-		var numRemainingCPs = selectedCutPoints(1) - 2  // min & max were extracted
-		var exitCondition = numRemainingCPs > 0 && bins.length + 1 > nLabels
+		    globalCaim) :: Nil  // -1 so its included the first point too
+		var numRemainingCPs = frequenciesTable.count -2  // min & max extracted
+		var exitCondition = numRemainingCPs > 0 && bins.length < nLabels
 		while(exitCondition)
 		{
 		  val (point, pointScore) =
@@ -29,12 +29,11 @@ object Bins
 				numRemainingCPs	-= 1
 				bins = updateBins(bins, point, frequenciesTable)
 				globalCaim = pointScore
-				exitCondition = numRemainingCPs > 0 && bins.length + 1 > nLabels
+				exitCondition = numRemainingCPs > 0 && bins.length < nLabels
 			}
 			else
 			  exitCondition = false
 		}
-		selectedCutPoints(0) = selectedCutPoints(0) + 1  // Fix the first cut point
 		selectedCutPoints.toList
 	}
 	
@@ -42,7 +41,14 @@ object Bins
 	    frequenciesTable: RDD[(Double, Array[Long])]): ArrayBuffer[Double] = 
 	{
 	  val selectedCutPoints = ArrayBuffer[Double]()
-		selectedCutPoints += frequenciesTable.first._1  // min
+		selectedCutPoints += frequenciesTable.min()(
+		    new Ordering[Tuple2[Double, Array[Long]]]() 
+  	    {
+  	      override def compare(x: (Double, Array[Long]),
+  	          y: (Double, Array[Long])): Int = 
+  	        Ordering[Double].compare(x._1, y._1)
+        }
+    )._1// min
 		selectedCutPoints += frequenciesTable.max()(
 		    new Ordering[Tuple2[Double, Array[Long]]]() 
   	    {
