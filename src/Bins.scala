@@ -8,17 +8,18 @@ object Bins
   
 	def calculate(sc: SparkContext,
 		frequenciesTable: RDD[(Double, Array[Long])], nLabels: Int):
-		  List[Double] =
+		  List[(Double, Int)] =
 	{
 		frequenciesTable.persist
 		
-		// Init CAIM and bins variables
-		var globalCaim = Double.MinValue
+		// Init score and cutPoints variables
+		var globalCaim = 0.0
 		val selectedCutPoints = initSelectedCutPoints(frequenciesTable)
 		var bins = ((selectedCutPoints(0) - 1 , selectedCutPoints(1)), 
 		    globalCaim) :: Nil  // -1 so its included the first point too
 		var numRemainingCPs = frequenciesTable.count -2  // min & max extracted
 		var exitCondition = numRemainingCPs > 0 && bins.length < nLabels
+		
 		while(exitCondition)
 		{
 		  val (point, pointScore) =
@@ -34,7 +35,8 @@ object Bins
 			else
 			  exitCondition = false
 		}
-		selectedCutPoints.toList
+	  val sortedCutpoints = selectedCutPoints.toList.sorted.zipWithIndex
+		sortedCutpoints
 	}
 	
 	private def initSelectedCutPoints(
@@ -65,7 +67,7 @@ object Bins
 	    List[((Double, Double), Double)] =
   bins match
   {
-  	case Nil => throw new Exception("End of bin list!")
+    case Nil => throw new Exception("End of bin list!")
   	case (cutPoints, _) :: tail if (newCutPoint < cutPoints._2) => 
   		insertCutPoint(cutPoints, newCutPoint, frequenciesTable) ::: tail
   	case bin::tail => bin :: updateBins(tail, newCutPoint, frequenciesTable)
@@ -78,7 +80,7 @@ object Bins
 	  val leftCutpoints = (cutPoints._1, newCutPoint)
 	  val rightCutpoints = (newCutPoint, cutPoints._2)
     val leftScore = calculateBinScore(leftCutpoints, frequenciesTable)
-    val rightScore = calculateBinScore(leftCutpoints, frequenciesTable)
+    val rightScore = calculateBinScore(rightCutpoints, frequenciesTable)
   	val leftBin = (leftCutpoints, leftScore)
   	val rightBin = (rightCutpoints, rightScore)
   	leftBin :: rightBin :: Nil
@@ -87,11 +89,12 @@ object Bins
   private def calculateBinScore(cutpoints: (Double, Double),
       frequenciesTable: RDD[(Double, Array[Long])]): Double =
   {
-    val binData = frequenciesTable.filter(point => (point._1 <= cutpoints._1) 
-  			&& (point._1 > cutpoints._2))
-  	val targetFrequency = binData.values.reduce( (frequency1, frequency2) => 
+    val binData = frequenciesTable.filter(point => (point._1 > cutpoints._1) 
+  			&& (point._1 <= cutpoints._2))
+  	val targetFrequency = binData.values.reduce((frequency1, frequency2) => 
   	  (frequency1, frequency2).zipped.map(_+_))
-  	val caimScore = targetFrequency.max / targetFrequency.sum.toDouble
+  	val caimScore = 
+  	  Math.pow(targetFrequency.max, 2) / targetFrequency.sum.toDouble
     caimScore
   }
   
