@@ -71,10 +71,10 @@ object BestCandidate {
   		(point._1, caim)
   	  }
   	val orderer = new Ordering[Tuple2[Double, Double]]() 
-  	    {
-  	      override def compare(x: (Double, Double), y: (Double, Double)): Int =
-  	        Ordering[Double].compare(x._2, y._2)
-        }
+    {
+      override def compare(x: (Double, Double), y: (Double, Double)): Int =
+        Ordering[Double].compare(x._2, y._2)
+    }
   	
   	val	pointsScores = pointInfluences.map(calculateBinsScore)
   	val	bestScorePoint =	pointsScores.max()(orderer)
