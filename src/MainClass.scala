@@ -17,7 +17,7 @@ object MainClass {
       CAIM.discretizeVariable(sparkSession, inputData,
           targetColName, variableColName)
     saveDataFrame(outputData, outputPath, outputFile, delimiter)
-    saveCutPoints(cutPoints, cutsOutputFile)
+    saveCutPoints(cutPoints, outputPath, cutsOutputFile)
   }
   
     
@@ -62,13 +62,14 @@ object MainClass {
       .csv(outputPath + outputFile)
   }
     
-  private def saveCutPoints(cutPoints: List[(Double, Int)],
+  private def saveCutPoints(cutPoints: List[(Double, Int)], outputPath: String,
       cutsOutputFile: String) = 
   {
-    val printWriter = new PrintWriter(new File(cutsOutputFile))
-    val printCutPoint = (variable: (Int, Array[Float])) => 
-      printWriter.write("Variable " + variable._1 +
-          ", CutPoints = " + variable._2.mkString(", ") + "\n")
+    val printWriter = new PrintWriter(new File(outputPath + cutsOutputFile))
+    val printCutPoint = (cutPoint: (Double, Int)) => 
+      printWriter.write("cutPoint " + cutPoint._1 +
+          ", ID = " + cutPoint._2 + "\n")
+    cutPoints.foreach(printCutPoint)
     printWriter.close()
   }
   
