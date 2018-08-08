@@ -26,11 +26,8 @@ object CAIM {
       targetName: String): DataFrame = 
   {
     val dataFiltered = data.select(variableName, targetName)
-    val dataSortedByVariable = dataFiltered.orderBy(variableName)
-    return(dataSortedByVariable)
+    return(dataFiltered)
   }
-  
-
   
 	private def discretizeData(variableName: String, 
 	    cutPoints: List[(Double, Int)], data: DataFrame): DataFrame =
