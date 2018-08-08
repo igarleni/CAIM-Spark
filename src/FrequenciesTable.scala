@@ -3,9 +3,9 @@ import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.rdd._
 
 object FrequenciesTable {
-    def calculate(sc: SparkContext, data: DataFrame, 
-      variableName: String, targetName: String): 
-      (RDD[(Double, Array[Long])], Int) =
+  
+  def calculate(sc: SparkContext, data: DataFrame, variableName: String,
+      targetName: String): (RDD[(Double, Array[Long])], Int) =
   {
 		val targetLabelsWithIndex = data.select(targetName).distinct
 		    .collect.map(row => row.getAs[Int](targetName)).zipWithIndex.toMap

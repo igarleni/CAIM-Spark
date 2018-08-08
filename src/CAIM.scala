@@ -26,6 +26,7 @@ object CAIM {
       targetName: String): DataFrame = 
   {
     val dataFiltered = data.select(variableName, targetName)
+    .withColumn(variableName, col(variableName).cast(DoubleType))
     return(dataFiltered)
   }
   
